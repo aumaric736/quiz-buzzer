@@ -1,0 +1,50 @@
+@startuml
+title 課堂搶答系統：搶答流程（組件圖）
+left to right direction
+actor 老師
+actor 學生
+component "老師活動畫面" as TeacherUI
+component "學生作答畫面" as StudentUI
+component "搶答流程服務" as BuzzerFlow
+component "活動階段服務" as ActivityPhase
+component "作答狀況查詢" as AnswerStatus
+component "階段與輸入驗證" as Validator
+component "首筆答案判定" as Adjudicator
+component "活動題目與組別" as ActivityData
+database "提交與勝出結果" as ResultStore
+component "角色範圍即時通知" as LiveUpdates
+component "答案結果 Provider" as Provider
+component "Guided Notes 匯出" as GuidedNotes
+
+老師 --> TeacherUI
+學生 --> StudentUI
+TeacherUI --> ActivityPhase : 開啟／結束搶答
+TeacherUI --> BuzzerFlow : 查詢題目
+StudentUI --> BuzzerFlow : 取得題目、提交有序答案片段
+TeacherUI --> AnswerStatus : 查詢每題狀況
+StudentUI --> AnswerStatus : 查詢本人受理狀況／結束後結果
+BuzzerFlow --> Validator : 檢查角色、階段、題號、組別及答案
+ActivityPhase --> Validator : 驗證老師權限、階段與開始條件
+Validator --> ActivityData : 驗證已匯入題號與活動組別
+ActivityPhase --> LiveUpdates : 階段保存後發佈更新
+Validator --> Adjudicator : 有效答案
+Adjudicator --> ResultStore : 每組每題首次提交；每題唯一勝出者
+BuzzerFlow --> ResultStore : 原子保存首筆勝出答案
+BuzzerFlow --> LiveUpdates : 保存成功後發佈題目更新
+LiveUpdates --> TeacherUI : 搶答期間即時更新全部題目
+LiveUpdates --> StudentUI : 階段更新；搶答中不含答案結果
+AnswerStatus --> ResultStore : 依角色與階段讀取已保存狀況
+AnswerStatus --> TeacherUI : 老師可見每題勝出資料
+AnswerStatus --> StudentUI : 本組狀況；結束後完整結果
+Provider --> ResultStore : 活動結束後讀取完整結果
+GuidedNotes --> Provider : 依題號取得勝出組別與有序答案
+
+note bottom of Adjudicator
+  同題以第一筆成功保存的有效提交為勝出答案。
+  後續組別不會覆寫；同組重複提交會被拒絕。
+end note
+note bottom of LiveUpdates
+  搶答進行中不向學生傳送其他組別的狀態、答案或勝出者。
+  已結束後學生可查看最終完整結果。
+end note
+@enduml

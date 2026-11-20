@@ -1,0 +1,44 @@
+@startuml
+title 課堂搶答系統：結果檢視與檢討（組件圖）
+left to right direction
+actor 學生
+actor 老師
+component "學生結果畫面" as StudentResults
+component "老師檢討畫面" as TeacherReview
+component "作答狀況 API" as AnswerStatusAPI
+component "作答狀況存取服務" as AnswerStatusAccess
+component "勝出答案提供者" as WinnerProvider
+component "檢討紀錄 API" as ReviewAPI
+component "檢討服務" as ReviewService
+component "檢討資料儲存庫" as ReviewRepository
+database "SQLite 活動與作答資料" as ResultStore
+
+學生 --> StudentResults
+老師 --> TeacherReview
+StudentResults --> AnswerStatusAPI : 讀取本人作答狀況／最終結果
+AnswerStatusAPI --> AnswerStatusAccess : 驗證角色、活動組別與階段
+AnswerStatusAccess --> WinnerProvider : 已結束時讀取勝出答案
+AnswerStatusAccess --> ResultStore : 準備／進行中讀取階段與本人提交
+WinnerProvider --> ResultStore : 讀取勝出答案及匯入題號
+ResultStore --> AnswerStatusAccess : 本人題號或階段資料
+ResultStore --> WinnerProvider : 勝出答案或無人作答題
+AnswerStatusAccess --> StudentResults : 進行中本人已送出題號／結束後勝出結果
+TeacherReview --> ReviewAPI : 列出本人活動、讀取檢討紀錄
+ReviewAPI --> ReviewService : 驗證老師、擁有者與已結束階段
+ReviewService --> ReviewRepository : 查詢本人活動及完整作答紀錄
+ReviewRepository --> ResultStore : 讀取題號、組別、答案與送出順位
+ResultStore --> ReviewRepository : 活動及作答紀錄
+ReviewRepository --> ReviewService : 完整紀錄與無人作答題
+ReviewService --> TeacherReview : 活動清單、順位與完整紀錄
+
+note bottom of AnswerStatusAccess
+  學生進行中只取得本人已送出的題號。
+  學生僅在活動結束後取得勝出組別與答案。
+  學生加入新活動後失去舊活動的組別關聯，不能再讀舊結果。
+  教師可透過本人活動清單回到既有活動。
+end note
+note bottom of ReviewService
+  老師紀錄每題各組第一筆有效提交；勝出後的有效提交也保留。
+  每題順位獨立計算；已結束活動建立新活動以開始下一輪。
+end note
+@enduml

@@ -1,0 +1,85 @@
+@startuml
+title 課堂搶答系統：使用者角色與活動階段同步（時序圖）
+actor 老師
+actor 學生
+participant "老師畫面" as TeacherUI
+participant "學生畫面" as StudentUI
+participant "活動階段管理" as Stage
+participant "作答階段許可檢查" as AnswerGuard
+participant "作答狀況存取控制" as AnswerView
+participant "本機活動資料" as Store
+participant "同步通知" as Sync
+
+老師 -> TeacherUI : 建立活動
+TeacherUI -> Stage : 建立活動
+Stage -> Store : 交易：儲存活動（準備中）與老師 session.activityId
+Store --> Stage : 提交成功（revision=0）
+Stage --> TeacherUI : 顯示準備中
+學生 -> StudentUI : 以組別加入活動
+StudentUI -> Stage : 驗證並加入組別
+Stage -> Store : 交易：檢查同名組別、保存組別與學生 session(activityId, groupId)
+Store --> Stage : 提交成功或重複／階段錯誤
+Stage --> StudentUI : 顯示目前階段
+
+老師 -> TeacherUI : 連線並訂閱活動
+TeacherUI -> Sync : activity.subscribe(activityId, sessionId)
+Sync -> Store : 驗證老師 session 與活動建立者
+Store --> Sync : 訂閱授權／目前階段與 revision
+Sync --> TeacherUI : activity.subscribed(snapshot)
+學生 -> StudentUI : 連線並訂閱活動
+StudentUI -> Sync : activity.subscribe(activityId, sessionId)
+Sync -> Store : 驗證學生 session 與組別加入狀態
+Store --> Sync : 訂閱授權／目前階段與 revision
+Sync --> StudentUI : activity.subscribed(snapshot)
+
+學生 -> StudentUI : 準備中嘗試進入作答
+StudentUI -> AnswerGuard : 檢查作答許可（無答案內容）
+AnswerGuard -> Store : 讀取學生組別與活動階段
+Store --> AnswerGuard : 準備中
+AnswerGuard --> StudentUI : 拒絕：尚未開始
+
+老師 -> TeacherUI : 開始搶答
+TeacherUI -> Stage : 切換為搶答進行中
+Stage -> Store : 交易：驗證轉換、保存階段與遞增 revision
+Store --> Stage : 提交成功
+Stage -> Sync : 提交後發布 activityId/phase/revision
+Sync --> TeacherUI : 更新活動階段
+Sync --> StudentUI : 更新活動階段
+學生 -> StudentUI : 搶答進行中嘗試進入作答
+StudentUI -> AnswerGuard : 檢查作答許可（無答案內容）
+AnswerGuard -> Store : 讀取學生組別與活動階段
+Store --> AnswerGuard : 搶答進行中
+AnswerGuard --> StudentUI : 允許進入後續作答流程
+
+學生 -> StudentUI : 重新整理／恢復連線
+StudentUI -> Stage : 恢復活動狀態
+Stage -> Store : 讀取 session 的角色、活動與組別 context
+Store --> Stage : 已保存的角色／活動識別／組別識別
+Stage -> Store : 讀取最新活動階段
+Store --> Stage : 目前階段
+Stage --> StudentUI : 恢復正確階段
+
+老師 -> TeacherUI : 結束活動
+TeacherUI -> Stage : 切換為已結束
+Stage -> Store : 交易：驗證轉換、保存階段與遞增 revision
+Store --> Stage : 提交成功
+Stage -> Sync : 提交後發布 activityId/phase/revision
+Sync --> TeacherUI : 更新為已結束
+Sync --> StudentUI : 更新為已結束
+學生 -> StudentUI : 已結束後嘗試進入作答
+StudentUI -> AnswerGuard : 檢查作答許可（無答案內容）
+AnswerGuard -> Store : 讀取學生組別與活動階段
+Store --> AnswerGuard : 已結束
+AnswerGuard --> StudentUI : 拒絕：活動已結束
+學生 -> StudentUI : 查看其他組別作答狀況
+StudentUI -> AnswerView : 檢查目前階段及檢視權限
+AnswerView -> Store : 檢查階段並讀取作答狀況
+Store --> AnswerView : 已結束，可提供狀況
+AnswerView --> StudentUI : 作答狀況（目前為空）
+
+note over StudentUI,AnswerGuard
+  準備中或已結束時嘗試作答均被拒絕，並顯示清楚原因。
+  搶答進行中檢查回報允許，但不接收或保存答案內容。
+  活動未結束前，學生無法檢視其他組別作答狀況。
+end note
+@enduml

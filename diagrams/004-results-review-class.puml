@@ -1,0 +1,62 @@
+@startuml
+title 課堂搶答系統：結果檢視與檢討（類別圖）
+class 活動 {
+  +activityId: ID
+  +phase: 活動階段
+}
+class 活動題目 {
+  +questionNumber: 正整數
+}
+class 學生組別 {
+  +groupId: ID
+  +displayName: 文字
+}
+class 作答紀錄 {
+  +questionNumber: 正整數
+  +answerParts: 有序文字清單
+  +submissionRank: 正整數
+  +submittedAt: 時間
+  +isWinner: 布林值
+}
+class 題目結果 {
+  +questionNumber: 正整數
+  +winnerGroup: 學生組別或空值
+  +answerParts: 有序文字清單
+  +unanswered: 布林值
+}
+class 結果檢視服務 {
+  +getTeacherActivities(sessionId): 老師活動清單
+  +getTeacherReviewRecords(sessionId, activityId): 老師作答紀錄
+}
+class 作答狀況存取服務 {
+  +readAnswerStatus(sessionId, activityId): 角色可見結果
+}
+class 勝出答案提供者 {
+  +loadEndedAnswerResults(activityId): 題目結果清單
+}
+class 檢討紀錄儲存庫 {
+  +listOwnedActivities(sessionId): 活動清單
+  +loadReviewRecords(activityId): 作答紀錄清單
+}
+
+活動 "1" o-- "1..*" 活動題目
+活動題目 "1" o-- "0..*" 作答紀錄
+學生組別 "1" -- "0..*" 作答紀錄
+活動題目 "1" --> "0..1" 題目結果
+作答紀錄 "0..1" --> "0..1" 題目結果 : 最早有效提交為勝出答案
+結果檢視服務 --> 活動
+結果檢視服務 --> 檢討紀錄儲存庫
+檢討紀錄儲存庫 --> 活動
+檢討紀錄儲存庫 --> 作答紀錄
+作答狀況存取服務 --> 勝出答案提供者
+勝出答案提供者 --> 題目結果
+勝出答案提供者 --> 作答紀錄 : 僅篩選勝出紀錄
+
+note bottom of 作答紀錄
+  每筆紀錄保存可穩定重現的送出順位。
+  每組每題第一筆有效提交都保留；順位按題目分別計算。
+end note
+note bottom of 題目結果
+  無人作答仍須建立明確的未作答呈現狀態。
+end note
+@enduml

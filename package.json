@@ -1,0 +1,19 @@
+{
+  "name": "quiz-buzzer2",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["client", "server", "shared"],
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "dev": "npm run dev --workspace=server",
+    "build": "npm run build --workspace=shared && npm run build --workspace=server && npm run build --workspace=client",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "5.1.1"
+  }
+}

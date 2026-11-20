@@ -1,0 +1,67 @@
+@startuml
+title 課堂搶答系統：搶答流程（類別圖）
+class 活動 {
+  +activityId: ID
+  +phase: 活動階段
+  +openBuzzer(): 結果
+  +endBuzzer(): 結果
+}
+class 活動題目 {
+  +questionNumber: 正整數
+  +blankCount: 正整數
+}
+class 學生組別 {
+  +groupId: ID
+  +displayName: 文字
+}
+class 答案提交 {
+  +submissionId: ID
+  +questionNumber: 正整數
+  +answerParts: 有序文字清單
+  +acceptedOrder: 序號
+  +acceptedAt: 時間
+}
+class 題目結果 {
+  +questionNumber: 正整數
+  +winnerGroupId: ID 或空值
+  +winnerGroupName: 文字或空值
+  +answerParts: 有序文字清單
+}
+class 搶答流程服務 {
+  +submitAnswer(activityId, groupId, questionNumber, answerParts): 受理結果
+}
+class 作答狀況查詢 {
+  +getTeacherStatus(activityId): 題目狀況清單
+  +getStudentView(activityId, groupId): 可見狀況
+}
+interface 答案結果Provider {
+  +getResults(activityId): 每題結果清單
+}
+class 已保存答案結果Provider {
+  +getResults(activityId): 每題結果清單
+}
+class 提交與結果儲存
+class 角色範圍通知
+
+活動 "1" o-- "1..*" 活動題目 : Guided Notes 題號
+活動 "1" o-- "0..*" 學生組別
+活動題目 "1" o-- "0..*" 答案提交
+學生組別 "1" -- "0..*" 答案提交
+答案提交 "0..1" --> "0..1" 題目結果 : 首筆有效提交成為勝出
+搶答流程服務 --> 活動
+搶答流程服務 --> 提交與結果儲存
+搶答流程服務 --> 角色範圍通知
+作答狀況查詢 --> 提交與結果儲存
+已保存答案結果Provider ..|> 答案結果Provider
+已保存答案結果Provider --> 提交與結果儲存
+題目結果 --> 活動題目 : 題號必須一致
+
+note bottom of 答案提交
+  每組每題只接受第一次有效提交。
+  多填空答案片段依欄位順序保存。
+end note
+note bottom of 答案結果Provider
+  僅活動結束後提供。
+  每個匯入題號恰有一筆勝出或無勝出結果。
+end note
+@enduml

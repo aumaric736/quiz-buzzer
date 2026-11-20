@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+
+node_modules/
+.npm-cache/
+dist/
+build/
+coverage/
+.vitest/
+*.log
+npm-debug.log*
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+*.tsbuildinfo

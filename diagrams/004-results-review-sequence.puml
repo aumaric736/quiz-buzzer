@@ -1,0 +1,60 @@
+@startuml
+title 課堂搶答系統：結果檢視與檢討（時序圖）
+actor 學生
+actor 老師
+participant "學生結果畫面" as StudentUI
+participant "老師檢討畫面" as TeacherUI
+participant "作答狀況 API" as AnswerStatusAPI
+participant "作答狀況存取服務" as AnswerStatusAccess
+participant "勝出答案提供者" as WinnerProvider
+participant "檢討紀錄 API" as ReviewAPI
+participant "檢討服務" as ReviewService
+participant "檢討資料儲存庫" as ReviewRepository
+participant "活動資料" as Activity
+database "結果及作答紀錄" as Store
+
+學生 -> StudentUI : 查看作答狀況
+StudentUI -> AnswerStatusAPI : GET answer-status(activityId)
+AnswerStatusAPI -> AnswerStatusAccess : 讀取本人可見狀況
+AnswerStatusAccess -> Activity : 驗證組別並讀取階段
+Activity --> AnswerStatusAccess : 階段
+alt 搶答進行中
+  AnswerStatusAccess -> Store : 讀取本人已送出的題號
+  Store --> AnswerStatusAccess : 本人題號，不含組別或答案
+  AnswerStatusAccess --> StudentUI : 本人已送出的題號
+else 活動已結束
+  AnswerStatusAccess -> WinnerProvider : 取得勝出結果
+  WinnerProvider -> Store : 讀取匯入題號與 is_winner 記錄
+  Store --> WinnerProvider : 勝出答案或無人作答
+  WinnerProvider --> AnswerStatusAccess : 每題一筆勝出結果
+  AnswerStatusAccess --> StudentUI : 勝出組別與答案或無人作答
+end
+
+學生 -> StudentUI : 加入新活動後查詢舊結果
+StudentUI -> AnswerStatusAPI : GET answer-status(oldActivityId)
+AnswerStatusAPI -> AnswerStatusAccess : 驗證目前組別仍屬於該活動
+AnswerStatusAccess --> StudentUI : 拒絕：工作階段已加入其他活動
+
+老師 -> TeacherUI : 開啟活動歷史清單
+TeacherUI -> ReviewAPI : GET /api/teacher/activities
+ReviewAPI -> ReviewService : 驗證老師工作階段
+ReviewService -> ReviewRepository : 查詢本人活動
+ReviewRepository -> Store : 查詢建立者與活動階段
+Store --> ReviewRepository : 活動清單
+ReviewRepository --> ReviewService : 活動 ID、階段與建立時間
+ReviewService --> TeacherUI : 活動清單
+
+老師 -> TeacherUI : 開啟檢討
+TeacherUI -> ReviewAPI : GET /api/activities/:id/review-records
+ReviewAPI -> ReviewService : 驗證建立活動老師及已結束階段
+ReviewService -> ReviewRepository : 讀取完整紀錄
+ReviewRepository -> Store : 讀取題號、所有作答紀錄及順位
+Store --> ReviewRepository : 各題紀錄，含勝出後其他組的有效提交
+ReviewRepository --> ReviewService : 完整紀錄及無人作答題
+ReviewService --> TeacherUI : 題號、組別、答案、順位及勝出標記
+
+note over ReviewService,Store
+  題目內順位依保存順序穩定排序。
+  結束活動不在同一活動重開；新活動使用獨立紀錄，舊結果保留。
+end note
+@enduml

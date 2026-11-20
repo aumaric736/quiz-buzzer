@@ -1,0 +1,24 @@
+{
+  "name": "@quiz-buzzer/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../.env --import tsx --watch src/app.ts",
+    "build": "tsc -b && node scripts/copy-migrations.mjs",
+    "start": "node dist/app.js"
+  },
+  "dependencies": {
+    "@quiz-buzzer/shared": "1.0.0",
+    "better-sqlite3": "^12.4.1",
+    "express": "^5.1.0",
+    "googleapis": "^190.0.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.5",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6"
+  }
+}

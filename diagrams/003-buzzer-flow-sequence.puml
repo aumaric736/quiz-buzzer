@@ -1,0 +1,75 @@
+@startuml
+title 課堂搶答系統：搶答流程（時序圖）
+actor 老師
+actor 學生
+participant "老師活動畫面" as TeacherUI
+participant "學生作答畫面" as StudentUI
+participant "搶答流程服務" as BuzzerFlow
+participant "活動階段服務" as ActivityService
+participant "作答狀況查詢" as AnswerStatus
+participant "階段／提交驗證" as Validator
+participant "首筆判定與儲存" as Store
+participant "角色範圍即時通知" as Updates
+participant "答案結果 Provider" as Provider
+participant "Guided Notes 匯出" as GuidedNotes
+
+老師 -> TeacherUI : 開啟搶答
+TeacherUI -> ActivityService : 開啟活動
+ActivityService -> Validator : 驗證老師、階段及題目清單
+Validator --> ActivityService : 驗證通過
+ActivityService -> Store : 將活動設為搶答進行中
+Store --> ActivityService : 階段已保存
+ActivityService -> Updates : 發佈新階段
+Updates --> TeacherUI : 更新老師畫面
+Updates --> StudentUI : 更新活動階段
+
+學生 -> StudentUI : 逐格填入答案並提交題號
+StudentUI -> BuzzerFlow : 提交組別、題號及有序答案片段
+BuzzerFlow -> Validator : 驗證組別、活動階段、題號與非空答案
+alt 輸入或狀態無效
+  Validator --> BuzzerFlow : 驗證失敗
+  BuzzerFlow --> StudentUI : 清楚錯誤；不改變提交結果
+else 提交有效
+  Validator --> BuzzerFlow : 驗證通過
+  BuzzerFlow -> Store : 原子檢查並保存首筆提交
+  alt 該題尚無勝出者且該組未提交
+    Store --> BuzzerFlow : 保存成功並成為勝出答案
+    BuzzerFlow -> Updates : 發佈題目狀況與勝出結果
+    Updates --> TeacherUI : 即時更新
+    BuzzerFlow --> StudentUI : 只確認本人提交受理
+  else 該組已提交或題目已關閉
+    Store --> BuzzerFlow : 拒絕重複或後續提交
+    BuzzerFlow --> StudentUI : 通用拒絕訊息，不透露其他組狀態
+  end
+end
+
+老師 -> TeacherUI : 結束搶答
+TeacherUI -> ActivityService : 結束活動
+alt 有效答案先成功保存
+  ActivityService -> Store : 完成階段轉換
+  Store --> ActivityService : 已結束；保留已保存答案
+else 結束操作先完成
+  ActivityService -> Store : 將活動設為已結束
+  Store --> ActivityService : 已結束；後續提交均拒絕
+end
+ActivityService -> Updates : 發佈已結束階段
+Updates --> TeacherUI : 更新活動階段
+Updates --> StudentUI : 更新活動階段
+
+TeacherUI -> AnswerStatus : 查詢老師作答狀況
+StudentUI -> AnswerStatus : 查詢本人狀況或結束後結果
+AnswerStatus -> Store : 依角色與階段查詢
+Store --> AnswerStatus : 隱私範圍內的題目結果
+AnswerStatus --> TeacherUI : 老師狀況／完整結果
+AnswerStatus --> StudentUI : 本人狀況／結束後完整結果
+
+GuidedNotes -> Provider : 活動結束後依 activityId 取得結果
+Provider -> Store : 讀取每個 Guided Notes 題號
+Store --> Provider : 勝出答案或無勝出狀態
+Provider --> GuidedNotes : 題號、成功組別、有序答案片段
+
+note over StudentUI,Updates
+  搶答進行中學生只收到本人的提交確認。
+  結果查詢依角色控管；結束後才向學生公開完整結果。
+end note
+@enduml

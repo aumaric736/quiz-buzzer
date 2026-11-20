@@ -1,0 +1,38 @@
+@startuml
+title 課堂搶答系統：使用者角色與活動階段同步（組件圖）
+left to right direction
+actor 老師
+actor 學生
+component "本機使用者介面" as UI
+component "角色與活動操作" as Roles
+component "活動階段管理" as Stage
+component "同步通知" as Sync
+component "作答階段許可檢查" as AnswerGuard
+component "作答狀況存取控制" as AnswerView
+database "本機活動資料" as Store
+
+老師 --> UI
+學生 --> UI
+UI --> Roles : 選擇角色／加入活動
+Roles --> Stage : 建立／查詢／切換活動
+Stage --> Store : 驗證並保存階段
+Stage --> Sync : 階段變更事件
+Sync --> UI : 通知所有活動畫面
+UI --> AnswerView : 查詢作答狀況
+AnswerView --> Stage : 檢查活動階段
+AnswerView --> Store : 讀取作答狀況
+UI --> AnswerGuard : 檢查作答許可
+AnswerGuard --> Stage : 讀取目前階段
+AnswerGuard --> UI : 允許或階段錯誤
+note right of AnswerGuard
+  僅搶答進行中回報允許
+  不接收或保存答案內容
+end note
+note right of AnswerView
+  已結束前拒絕學生讀取
+  其他組別作答狀況
+end note
+note bottom of Store
+  本機模擬；不要求外部設備伺服器
+end note
+@enduml

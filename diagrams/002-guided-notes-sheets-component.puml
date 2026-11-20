@@ -1,0 +1,39 @@
+@startuml
+title 課堂搶答系統：Guided Notes 匯入與匯出（組件圖）
+left to right direction
+actor 老師
+component "本機老師介面" as UI
+component "Guided Notes 匯入／匯出流程" as Workflow
+component "題號與填空結構辨識" as Detector
+component "活動與成功作答查詢" as Results
+component "寫回預覽與確認" as Review
+component "Google Sheets 存取" as Sheets
+cloud "Google Sheets 文件" as Sheet
+database "本機活動與文件對應資料" as Store
+
+老師 --> UI
+UI --> Workflow : 選擇文件／匯入／確認寫回
+Workflow --> Detector : 動態辨識題號與空格位置
+Detector --> Sheets : 讀取文件結構
+Sheets --> Sheet
+Workflow --> Results : 讀取活動題目與成功組別答案
+Results --> Store
+Workflow --> Review : 顯示逐題預覽
+Review --> Sheets : 確認後更新原文件空格
+Sheets --> Sheet
+Workflow --> Store : 保存文件識別、辨識結果與匯出狀態
+
+note right of Detector
+  依文件內容辨識
+  不使用固定儲存格座標
+  模糊或缺失時停止寫入
+end note
+note bottom of Review
+  老師確認前不修改來源文件
+  無成功答案的題目保持原狀
+end note
+note bottom of Sheets
+  使用安全授權
+  權限與服務錯誤須清楚回報
+end note
+@enduml

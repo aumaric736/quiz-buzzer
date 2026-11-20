@@ -1,0 +1,73 @@
+@startuml
+title 課堂搶答系統：Guided Notes 匯入與匯出（時序圖）
+actor 老師
+participant "老師介面" as UI
+participant "Guided Notes 流程" as Workflow
+participant "文件結構辨識器" as Detector
+participant "活動／成功作答資料" as Results
+participant "Google Sheets 存取" as Sheets
+participant "原始 Guided Notes" as Document
+
+老師 -> UI : 選擇 Guided Notes 與工作表
+UI -> Workflow : 匯入已分享給服務帳戶的文件
+Workflow -> Sheets : 使用環境設定的服務帳戶讀取文件
+Sheets -> Document : 讀取題號與內容結構
+Document --> Sheets : 文件資料
+Sheets --> Workflow : 文件資料
+Workflow -> Detector : 動態辨識題號與填空位置
+Detector --> Workflow : 題目對應／辨識錯誤
+Workflow -> Workflow : 若題目已存在，比對文件題數
+alt 首次匯入或既有題數一致，且結構可辨識
+  Workflow -> Workflow : 建立／保留活動題號清單與文件對應
+  Workflow --> UI : 顯示題號清單與匯入成功
+else 題數不同、找不到空格或辨識不明確
+  Workflow --> UI : 拒絕匯入並顯示差異，不修改文件
+end
+
+... 搶答活動結束 ...
+老師 -> UI : 開啟匯出預覽
+UI -> Workflow : 建立逐題預覽
+Workflow -> Results : 依題號讀取成功組別及有序答案片段
+Results --> Workflow : 成功答案片段／無成功組別
+Workflow -> Sheets : 重新讀取並確認文件結構未變
+Sheets -> Document : 讀取目前結構
+Document --> Sheets : 最新結構
+Sheets --> Workflow : 最新文件狀態
+Workflow -> Detector : 重新辨識並核對既有對應
+Detector --> Workflow : 目前填空位置
+Workflow --> UI : 顯示逐題答案與目標位置
+老師 -> UI : 檢查並確認寫回
+UI -> Workflow : 確認匯出
+alt 文件可寫入且對應仍有效
+  Workflow -> Workflow : 記錄待處理匯出嘗試
+  Workflow -> Sheets : 依辨識順序更新有答案題目的空格
+  Sheets -> Document : 寫入有序答案片段；無成功組別題目保持原狀
+  Document --> Sheets : 更新結果
+  Sheets --> Workflow : 成功／部分失敗結果
+  Workflow -> Sheets : 重讀目標空格並驗證
+  Sheets -> Document : 讀取目前填答格
+  Document --> Sheets : 最新填答格
+  Sheets --> Workflow : 寫回後內容
+  Workflow -> Workflow : 保存完成／失敗狀態
+  Workflow --> UI : 顯示逐題匯出結果
+else 寫入逾時
+  Workflow -> Sheets : 重讀目標空格以核對結果
+  alt 全部已寫入
+    Sheets --> Workflow : 所有目標符合答案
+    Workflow -> Workflow : 保存完成狀態
+    Workflow --> UI : 顯示已完成
+  else 全部未寫入或結果混合
+    Sheets --> Workflow : 未寫入／部分寫入狀態
+    Workflow -> Workflow : 保存結果未知或失敗；禁止盲目重試
+    Workflow --> UI : 顯示核對結果與安全指引
+  end
+else 權限不足、文件結構變更或存取失敗
+  Workflow --> UI : 停止寫入並顯示可採取行動的錯誤
+end
+
+note over UI,Document
+  老師確認前不寫回；不使用固定儲存格座標。
+  多空格依序對應答案片段；成功作答由獨立子功能提供。
+  老師需將文件分享給設定的服務帳戶。
+end note
+@enduml

@@ -1,0 +1,77 @@
+@startuml
+title 課堂搶答系統：Guided Notes 匯入與匯出（類別圖）
+class 老師工作階段 {
+  +sessionId: ID
+  +role: 老師
+}
+class GuidedNotes文件 {
+  +spreadsheetId: ID
+  +worksheetId: ID
+  +accessState: 狀態
+  +structureVersion: 版本
+}
+class 題目對應 {
+  +questionNumber: 整數
+  +blankLocations: 位置清單
+  +confidence: 狀態
+}
+class 活動題目 {
+  +questionNumber: 整數
+}
+class 成功作答 {
+  +questionNumber: 整數
+  +groupName: 文字
+  +answerParts: 有序文字清單
+}
+class GuidedNotes流程 {
+  +import(document): 題目清單
+  +validateQuestionCount(): 結果
+  +previewExport(): 預覽
+  +writeBack(): 匯出結果
+}
+class 文件結構辨識器 {
+  +detectQuestions(document): 題目對應清單
+  +detectBlanks(question): 位置清單
+}
+class 匯出預覽 {
+  +items: 預覽項目清單
+  +confirmed: 布林值
+}
+class 匯出結果 {
+  +writtenQuestions: 題號清單
+  +unchangedQuestions: 題號清單
+  +failedQuestions: 題號清單
+}
+class 匯出嘗試 {
+  +exportId: ID
+  +status: 預覽中／待確認／已完成／失敗／結果未知
+  +sourceFingerprint: 摘要
+  +answerSnapshotHash: 摘要
+  +previewExpiresAt: 時間
+  +writtenQuestionNumbers: 題號清單
+  +unchangedQuestionNumbers: 題號清單
+  +failedQuestionNumbers: 題號清單
+}
+
+老師工作階段 --> GuidedNotes流程
+GuidedNotes流程 --> GuidedNotes文件
+GuidedNotes流程 --> 文件結構辨識器
+文件結構辨識器 --> 題目對應
+GuidedNotes流程 --> 活動題目
+GuidedNotes流程 --> 成功作答
+題目對應 --> 活動題目 : 以題號對應
+成功作答 --> 活動題目 : 屬於
+GuidedNotes流程 --> 匯出預覽
+匯出預覽 --> 匯出結果 : 確認後寫回
+GuidedNotes流程 --> 匯出嘗試 : 建立／更新狀態
+匯出嘗試 --> 匯出結果 : 查詢結果
+
+note bottom of 題目對應
+  位置由文件內容動態辨識
+  依範例文件建立支援規則
+  多空格依序對應答案片段
+end note
+note bottom of 成功作答
+  由獨立作答子功能提供
+end note
+@enduml
