@@ -4,10 +4,11 @@ import { HttpError } from '../../../api/validation.js';
 import { createActivityRecord, findActivity, updateActivityPhase } from '../persistence/activity-repository.js';
 
 function requireTeacher(db: SqliteDatabase, sessionId: string, activityId?: string): void {
-  const session = db.prepare('SELECT role, retired_at FROM user_sessions WHERE id = ?').get(sessionId) as { role: string; retired_at: string | null } | undefined;
+  const session = db.prepare('SELECT role, retired_at, authenticated_at FROM user_sessions WHERE id = ?').get(sessionId) as { role: string; retired_at: string | null; authenticated_at: string | null } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
   if (session.retired_at) throw new HttpError(404, 'SESSION_NOT_FOUND', '此工作階段已結束，請重新選擇角色。');
   if (session.role !== 'teacher') throw new HttpError(403, 'TEACHER_REQUIRED', '只有老師可以執行此操作。');
+  if (!session.authenticated_at) throw new HttpError(403, 'TEACHER_LOGIN_REQUIRED', '老師請先以帳號密碼登入。');
   if (activityId) {
     const activity = db.prepare('SELECT created_by_session_id FROM activities WHERE id = ?').get(activityId) as { created_by_session_id: string } | undefined;
     if (!activity) throw new HttpError(404, 'ACTIVITY_NOT_FOUND', '找不到此活動。');

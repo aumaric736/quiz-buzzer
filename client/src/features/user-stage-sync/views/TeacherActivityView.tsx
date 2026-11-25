@@ -10,6 +10,8 @@ import { QuestionResultList } from '../../buzzer-flow/components/QuestionResultL
 import { getTeacherReviewRecords } from '../../results-review/services/results-review-api.js';
 import { TeacherActivityHistory } from '../../results-review/components/TeacherActivityHistory.js';
 import { TeacherSubmissionReview } from '../../results-review/components/TeacherSubmissionReview.js';
+import { ActivityJoinCode } from '../components/ActivityJoinCode.js';
+import { TeacherGroupRoster } from '../components/TeacherGroupRoster.js';
 
 interface TeacherActivityViewProps { session: UserSession; initialActivity?: ActivitySnapshot | null }
 
@@ -77,7 +79,8 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
       <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">本機模擬</span>
     </div>
     {!activity ? <div className="mt-8"><p className="text-slate-600">建立活動後，學生即可在準備階段加入組別。</p><button className="mt-4 rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50" disabled={busy} onClick={() => void createNewActivity()}>{busy ? '建立中…' : '建立活動'}</button></div> : <div className="mt-8">
-      <p className="text-sm text-slate-500">活動代碼</p><p className="mt-1 break-all font-mono text-sm">{activity.activityId}</p>
+      <ActivityJoinCode code={activity.activityId} />
+      <TeacherGroupRoster sessionId={session.sessionId} activityId={activity.activityId} />
       <div className="mt-5 rounded-2xl bg-indigo-50 p-6"><p className="text-sm text-indigo-800">目前階段</p><p aria-live="polite" className="mt-1 text-3xl font-bold text-indigo-950">{activity.phase}</p><p className="mt-2 text-sm text-indigo-700">版本 {activity.revision}</p></div>
       <ActivityPhaseStatus sessionId={session.sessionId} activity={activity} onUpdate={setActivity} onReconnect={() => void refreshAnswerStatus()} onBuzzerUpdate={handleBuzzerUpdate} />
       <p className="mt-3 text-sm text-slate-600">搶答不設倒數，會持續進行直到老師手動結束。</p>

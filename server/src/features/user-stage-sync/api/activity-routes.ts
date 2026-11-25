@@ -3,6 +3,8 @@ import type { SqliteDatabase } from '../persistence/database.js';
 import { createActivity, getActivity, transitionActivity } from '../application/activity-service.js';
 import { HttpError, isRecord, requireNonEmptyString } from '../../../api/validation.js';
 import type { ActivityPhaseUpdatedEvent } from '@quiz-buzzer/shared';
+import { activityOperationQueue } from '../../buzzer-flow/application/activity-operation-queue.js';
+import { recordActivityOperation } from '../../buzzer-flow/persistence/activity-operation-repository.js';
 
 type PhasePublisher = (event: ActivityPhaseUpdatedEvent) => void;
 
@@ -31,11 +33,17 @@ export function activityRoutes(db: SqliteDatabase, publishPhase: PhasePublisher 
       response.json(getActivity(db, activityId));
     } catch (error) { next(error); }
   });
-  router.post('/api/activities/:activityId/phase', (request, response, next) => {
+  router.post('/api/activities/:activityId/phase', async (request, response, next) => {
     try {
       if (!isRecord(request.body) || Object.keys(request.body).length !== 1 || !('phase' in request.body)) throw new HttpError(409, 'INVALID_PHASE_TRANSITION', '請提供有效的下一個活動階段。');
       const activityId = requireNonEmptyString(request.params.activityId, 'activityId', 100);
-      const snapshot = transitionActivity(db, requestSessionId(request), activityId, request.body.phase);
+      const sessionId = requestSessionId(request);
+      const snapshot = request.body.phase === '已結束'
+        ? await activityOperationQueue.run(activityId, () => {
+          recordActivityOperation(db, activityId, 'end');
+          return transitionActivity(db, sessionId, activityId, request.body.phase);
+        })
+        : transitionActivity(db, sessionId, activityId, request.body.phase);
       publishPhase({ type: 'activity.phase.updated', ...snapshot });
       response.json(snapshot);
     } catch (error) { next(error); }

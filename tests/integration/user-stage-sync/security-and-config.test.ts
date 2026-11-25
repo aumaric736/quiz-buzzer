@@ -5,7 +5,7 @@ import { log } from '../../../server/src/logging/logger.js';
 
 describe('security and local configuration', () => {
   it('rejects a non-loopback service address', () => {
-    expect(() => loadConfig({ HOST: '0.0.0.0', PORT: '3000', CLIENT_ORIGIN: 'http://127.0.0.1:5173', DATABASE_PATH: './data/test.sqlite' })).toThrow(/127\.0\.0\.1/);
+    expect(() => loadConfig({ HOST: 'public.example', PORT: '3000', CLIENT_ORIGIN: 'http://127.0.0.1:5173', DATABASE_PATH: './data/test.sqlite', TEACHER_USERNAME: 'teacher', TEACHER_PASSWORD: 'secret' })).toThrow(/HOST/);
   });
 
   it('ignores .env while keeping the safe .env.example visible to git', () => {

@@ -96,6 +96,22 @@ describe('Guided Notes uncertain export reconciliation', () => {
     expect(sheets.calls).toBe(1);
   });
 
+  it('safely retries an unknown attempt only after building and confirming a fresh worksheet preview', async () => {
+    sheets.mode = 'none-applied';
+    const originalId = await makePreview();
+    const first = await post('exports', { previewId: originalId });
+    expect(first.status).toBe(503);
+    sheets.mode = 'all-applied';
+    const retry = await post(`exports/${originalId}/retry`, {});
+    expect(retry.status).toBe(200);
+    const result = await retry.json() as { exportId: string; status: string; writtenQuestionNumbers: number[] };
+    expect(result).toMatchObject({ status: 'completed', writtenQuestionNumbers: [1] });
+    expect(result.exportId).not.toBe(originalId);
+    expect(db.prepare('SELECT status FROM guided_notes_export_attempts WHERE id = ?').get(originalId)).toEqual({ status: 'unknown' });
+    expect(db.prepare('SELECT status FROM guided_notes_export_attempts WHERE id = ?').get(result.exportId)).toEqual({ status: 'completed' });
+    expect(sheets.calls).toBe(2);
+  });
+
   it('reports mixed target values for teacher review and does not retry the batch', async () => {
     sheets.mode = 'mixed';
     const previewId = await makePreview();

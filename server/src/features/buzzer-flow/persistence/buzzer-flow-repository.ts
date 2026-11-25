@@ -11,6 +11,8 @@ export interface AcceptedAnswerSubmission {
   groupName: string;
   answerParts: string[];
   isWinner: boolean;
+  submissionRank?: number;
+  isReplay?: boolean;
 }
 
 export interface AcceptAnswerInput {
@@ -18,6 +20,7 @@ export interface AcceptAnswerInput {
   activityId: string;
   questionNumber: number;
   answerParts: string[];
+  receiptSequence?: number;
 }
 
 function invalidAnswer(message: string): HttpError {
@@ -70,13 +73,22 @@ export function acceptAnswerSubmission(db: SqliteDatabase, input: AcceptAnswerIn
         throw invalidAnswer('每個填空都必須輸入非空白答案。');
       }
       if (part.trim().length > 1000) throw invalidAnswer('每個答案片段不可超過 1000 個字元。');
-      return part.trim();
+      return part;
     });
 
-    const duplicate = db.prepare(`SELECT 1 FROM buzzer_submissions
+    const duplicate = db.prepare(`SELECT accepted_order AS acceptedOrder, accepted_at AS acceptedAt,
+        answer_parts_json AS answerPartsJson, is_winner AS isWinner
+      FROM buzzer_submissions
       WHERE activity_id = ? AND question_number = ? AND group_id = ?`)
       .get(input.activityId, input.questionNumber, group.id);
-    if (duplicate) rejectDuplicateSubmission();
+    if (duplicate) {
+      const prior = duplicate as { acceptedOrder: number; acceptedAt: string; answerPartsJson: string; isWinner: number };
+      const priorParts = JSON.parse(prior.answerPartsJson) as string[];
+      if (JSON.stringify(priorParts) !== JSON.stringify(input.answerParts)) rejectDuplicateSubmission();
+      return { acceptedOrder: prior.acceptedOrder, acceptedAt: prior.acceptedAt, activityId: input.activityId,
+        questionNumber: input.questionNumber, groupId: group.id, groupName: group.displayName, answerParts: priorParts,
+        isWinner: prior.isWinner === 1, isReplay: true };
+    }
 
     const rankRow = db.prepare(`SELECT COALESCE(MAX(submission_rank), 0) AS maxRank,
         COALESCE(MAX(is_winner), 0) AS hasWinner
@@ -87,13 +99,13 @@ export function acceptAnswerSubmission(db: SqliteDatabase, input: AcceptAnswerIn
 
     const acceptedAt = new Date().toISOString();
     const result = db.prepare(`INSERT INTO buzzer_submissions
-      (activity_id, question_number, group_id, answer_parts_json, accepted_at, submission_rank, is_winner)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(input.activityId, input.questionNumber, group.id, JSON.stringify(answerParts), acceptedAt, submissionRank, isWinner ? 1 : 0);
+      (activity_id, question_number, group_id, answer_parts_json, accepted_at, submission_rank, is_winner, receipt_sequence)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(input.activityId, input.questionNumber, group.id, JSON.stringify(input.answerParts), acceptedAt, submissionRank, isWinner ? 1 : 0, input.receiptSequence ?? null);
     return {
       acceptedOrder: Number(result.lastInsertRowid), acceptedAt,
       activityId: input.activityId, questionNumber: input.questionNumber,
-      groupId: group.id, groupName: group.displayName, answerParts, isWinner
+      groupId: group.id, groupName: group.displayName, answerParts: input.answerParts, isWinner, submissionRank
     };
   });
 

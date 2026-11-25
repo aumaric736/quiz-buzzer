@@ -8,6 +8,7 @@ import { createSession } from '../../../server/src/features/user-stage-sync/appl
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
 import { restoreApplicationSession } from '../../../client/src/features/user-stage-sync/services/session-restore.js';
+import { markStudentDisconnected, reconcileExpiredStudentSessions, restoreStudentPresence } from '../../../server/src/features/user-stage-sync/application/student-session-presence-service.js';
 
 describe('session and activity restoration', () => {
   let db: SqliteDatabase;
@@ -46,5 +47,21 @@ describe('session and activity restoration', () => {
     const response = await fetch(`${baseUrl}/api/sessions/missing-session`);
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ code: 'SESSION_NOT_FOUND', message: expect.any(String) });
+  });
+
+  it('retains and restores the same team seat before two minutes, then frees it after expiry', () => {
+    const prepActivityId = createActivity(db, teacherId).activityId;
+    const leaderId = createSession(db, 'student').sessionId;
+    const team = enrollGroup(db, leaderId, prepActivityId, { mode: 'leader', groupName: 'Retention Team' });
+    const memberId = createSession(db, 'student').sessionId;
+    enrollGroup(db, memberId, prepActivityId, { mode: 'member', inviteCode: team.inviteCode });
+    const disconnectedAt = new Date('2026-11-26T01:00:00.000Z');
+    markStudentDisconnected(db, memberId, disconnectedAt);
+    expect(restoreStudentPresence(db, memberId, new Date(disconnectedAt.getTime() + 119_999))).toBe(true);
+    markStudentDisconnected(db, memberId, disconnectedAt);
+    expect(reconcileExpiredStudentSessions(db, new Date(disconnectedAt.getTime() + 120_000))).toBe(1);
+    const replacement = createSession(db, 'student');
+    expect(enrollGroup(db, replacement.sessionId, prepActivityId, { mode: 'member', inviteCode: team.inviteCode })).toMatchObject({ groupId: team.groupId });
+    expect(db.prepare('SELECT group_id AS groupId FROM user_sessions WHERE id = ?').get(memberId)).toEqual({ groupId: null });
   });
 });

@@ -1,0 +1,74 @@
+@startuml
+title 小組活動與逐題搶答 - 資料模型
+hide methods
+skinparam classAttributeIconSize 0
+
+class Activity {
+  id: string
+  phase: preparation | live | ended
+  ownerSessionId: string
+  teacherDisconnectDeadline: timestamp?
+  joinCode: string
+}
+
+class StudentGroup {
+  id: string
+  activityId: string
+  inviteCode: sixDigitString
+  leaderSessionId: string
+  leaderSessionId: string
+  acceptsMembers: boolean
+}
+
+class UserSession {
+  id: string
+  role: teacher | student
+  activityId: string?
+  groupId: string?
+  groupRole: leader | member | null
+  disconnectDeadline: timestamp?
+  retiredAt: timestamp?
+}
+
+class ActivityOperationReceipt {
+  activityId: string
+  sequence: integer
+  type: answer | end
+  receivedAt: timestamp
+}
+
+class AnswerSubmission {
+  activityId: string
+  questionNumber: integer
+  groupId: string
+  receiptSequence: integer
+  originalAnswer: string[]
+  rank: integer
+  isWinner: boolean
+}
+
+class ExportAttempt {
+  id: string
+  activityId: string
+  status: previewed | pending | completed | failed | unknown
+}
+
+Activity "1" -- "0..100" StudentGroup
+Activity "1" -- "0..*" UserSession
+StudentGroup "1" -- "0..2 active" UserSession : seats
+Activity "1" -- "0..*" ActivityOperationReceipt
+StudentGroup "1" -- "0..*" AnswerSubmission
+Activity "1" -- "0..*" AnswerSubmission
+Activity "1" -- "0..*" ExportAttempt
+note right of StudentGroup
+  inviteCode is six numeric characters,
+  random and unique within one activity.
+  Sessions, not verified people or sockets,
+  are limited to two active seats.
+end note
+note bottom of UserSession
+  Last socket loss retains the seat for 2 minutes.
+  Reconnect restores this session; invite-code
+  rejoin creates a new session if a seat is open.
+end note
+@enduml

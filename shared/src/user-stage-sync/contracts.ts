@@ -10,6 +10,8 @@ export interface UserSession {
   activityId: string | null;
   groupId: string | null;
   groupName?: string | null;
+  groupRole?: 'leader' | 'member' | null;
+  groupInviteCode?: string | null;
 }
 
 export interface ActivitySnapshot {
@@ -22,6 +24,17 @@ export interface GroupRecord {
   groupId: string;
   activityId: string;
   displayName: string;
+  inviteCode?: string;
+}
+
+export type GroupEnrollmentRequest =
+  | { mode: 'leader'; activityId: string; groupName: string }
+  | { mode: 'member'; activityId: string; inviteCode: string };
+
+export interface TeacherGroupRosterItem {
+  groupId: string;
+  inviteCode: string;
+  activeSessionCount: number;
 }
 
 export interface ApiErrorBody {

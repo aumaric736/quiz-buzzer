@@ -65,12 +65,12 @@ describe('final result visibility acceptance', () => {
     expect(html).toContain('無勝出組別');
   });
 
-  it('offers the student a new-activity switch after the ended results are shown', () => {
+  it('keeps ended results read-only without a new-activity action', () => {
     const html = renderToStaticMarkup(<StudentJoinView
       session={{ sessionId: studentAId, role: 'student', activityId, groupId: 'group-1', groupName: 'Blue Team' }}
       initialActivity={{ activityId, phase: '已結束', revision: 2 }}
     />);
-    expect(html).toContain('載入結果後可加入新活動');
-    expect(html).toContain('disabled=""');
+    expect(html).toContain('已結束');
+    expect(html).not.toContain('加入新活動');
   });
 });

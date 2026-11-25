@@ -16,7 +16,7 @@ describe('results-review SQLite migration', () => {
     db = new Database(':memory:');
     db.pragma('foreign_keys = ON');
     const migrations = resolve(process.cwd(), 'server/src/features/user-stage-sync/persistence/migrations');
-    for (const name of ['001-user-stage-sync.sql', '002-guided-notes-sheets.sql', '003-buzzer-flow.sql', '005-user-stage-recovery.sql']) {
+    for (const name of ['001-user-stage-sync.sql', '002-guided-notes-sheets.sql', '003-buzzer-flow.sql', '005-user-stage-recovery.sql', '006-two-person-teams.sql']) {
       applyMigrations(db, resolve(migrations, name));
     }
 
@@ -33,6 +33,7 @@ describe('results-review SQLite migration', () => {
     const oldAcceptedOrder = Number(old.lastInsertRowid);
 
     applyMigrations(db, resolve(migrations, '004-results-review.sql'));
+    applyMigrations(db, resolve(migrations, '007-answer-receipts.sql'));
 
     expect(db.prepare(`SELECT accepted_order AS acceptedOrder, activity_id AS activityId,
         question_number AS questionNumber, group_id AS groupId, answer_parts_json AS answerPartsJson,

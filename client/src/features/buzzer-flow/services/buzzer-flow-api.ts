@@ -27,6 +27,18 @@ export function getBuzzerQuestions(sessionId: string, activityId: string, apiBas
   return request(sessionId, `/api/activities/${encodeURIComponent(activityId)}/questions`, undefined, apiBase);
 }
 
+export function getPublishedFinalResults(activityCode: string, apiBase = DEFAULT_API_BASE): Promise<import('@quiz-buzzer/shared').EndedAnswerStatusResponse> {
+  return fetch(`${apiBase}/api/activities/${encodeURIComponent(activityCode)}/final-results`)
+    .then(async (response) => {
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message = typeof result === 'object' && result !== null && 'message' in result && typeof result.message === 'string' ? result.message : '無法載入最終結果。';
+        throw new Error(message);
+      }
+      return result as import('@quiz-buzzer/shared').EndedAnswerStatusResponse;
+    });
+}
+
 export function submitBuzzerAnswer(
   sessionId: string,
   activityId: string,

@@ -25,4 +25,22 @@ describe('user-stage-sync SQLite schema', () => {
       expect(() => insert.run('group-3', 'activity-1', ' ', '', 'now')).toThrow();
     } finally { db.close(); }
   });
+
+  it('enforces activity-scoped six-digit invite-code uniqueness and ordered receipts', () => {
+    const db = createTestDatabase();
+    try {
+      db.prepare('INSERT INTO user_sessions (id, role, updated_at) VALUES (?, ?, ?)').run('teacher-1', 'teacher', 'now');
+      const addActivity = db.prepare('INSERT INTO activities (id, phase, revision, created_by_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
+      addActivity.run('activity-1', '準備中', 0, 'teacher-1', 'now', 'now');
+      addActivity.run('activity-2', '準備中', 0, 'teacher-1', 'now', 'now');
+      const addGroup = db.prepare('INSERT INTO groups (id, activity_id, display_name, normalized_name, joined_at, invite_code) VALUES (?, ?, ?, ?, ?, ?)');
+      addGroup.run('g1', 'activity-1', 'A', 'a', 'now', '004207');
+      expect(() => addGroup.run('g2', 'activity-1', 'B', 'b', 'now', '004207')).toThrow();
+      addGroup.run('g3', 'activity-2', 'A', 'a', 'now', '004207');
+      const addReceipt = db.prepare('INSERT INTO activity_operation_receipts (activity_id, sequence, operation_type, received_at) VALUES (?, ?, ?, ?)');
+      addReceipt.run('activity-1', 1, 'answer', 'now');
+      expect(() => addReceipt.run('activity-1', 1, 'end', 'now')).toThrow();
+      expect(() => addReceipt.run('activity-1', 0, 'answer', 'now')).toThrow();
+    } finally { db.close(); }
+  });
 });

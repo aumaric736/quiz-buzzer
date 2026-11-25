@@ -37,17 +37,17 @@ describe('role-filtered answer status', () => {
     expect(readAnswerStatus(db, teacherId, activityId)).toEqual({
       phase: '搶答進行中',
       items: [
-        { questionNumber: 2, status: 'won', groupId: groupA.groupId, groupName: 'Blue Team', answerParts: ['first', 'second'] },
-        { questionNumber: 5, status: 'open' }
+        { questionNumber: 2, status: 'won', groupId: groupA.groupId, groupName: 'Blue Team', answerParts: ['first', 'second'], submissions: [{ groupId: groupA.groupId, groupName: 'Blue Team', answerParts: ['first', 'second'], submissionRank: 1, isWinner: true }] },
+        { questionNumber: 5, status: 'open', submissions: [] }
       ]
     });
     expect(readAnswerStatus(db, studentAId, activityId)).toEqual({
-      phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted' }]
+      phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted', answerParts: ['first', 'second'] }]
     });
     expect(readAnswerStatus(db, studentBId, activityId)).toEqual({ phase: '搶答進行中', items: [] });
     submitAnswer(db, studentBId, activityId, { questionNumber: 2, answerParts: ['later', 'answer'] });
     expect(readAnswerStatus(db, studentBId, activityId)).toEqual({
-      phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted' }]
+      phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted', answerParts: ['later', 'answer'] }]
     });
     expect(readAnswerStatus(db, teacherId, activityId)).toMatchObject({
       phase: '搶答進行中', items: [
