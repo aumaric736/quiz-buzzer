@@ -1,0 +1,24 @@
+@startuml
+title 005 - Return to role selection (components)
+skinparam componentStyle rectangle
+
+actor User
+component "ApplicationShell" as Shell
+component "ReturnToRoleControl" as Control
+component "session-api\nlocal session helpers" as ClientApi
+component "Session Routes" as Routes
+component "Session Service" as Service
+database "SQLite\nuser_sessions / activities / groups" as DB
+
+User --> Shell : select return
+Shell --> Control : render in teacher/student flows
+Control --> ClientApi : retireBeforeClearingSession
+ClientApi --> Routes : POST reset-context
+Routes --> Service : retire session
+Service --> DB : transactional update
+DB --> Service : retired row
+Service --> Routes
+Routes --> ClientApi : success / SESSION_NOT_FOUND / error
+ClientApi --> Control : clear local id only on success or missing
+Control --> Shell : show role chooser / retain current flow
+@enduml
