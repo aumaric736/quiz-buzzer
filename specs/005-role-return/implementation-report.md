@@ -6,7 +6,7 @@
 ## Status
 
 - **Implemented and covered**: global return control, server-side session retirement, clearing activity/group references, retired-session access denial, local-id clearing order, retry/error handling, teacher/student isolation, retained group data, and fresh session after role selection.
-- **Completed in this documentation pass**: `specs/005` feature documents, quality checklist, PlantUML source/rendered diagrams, feature pointer, and cross-artifact review.
+- **Completed in this documentation pass**: `specs/005-role-return` feature documents, quality checklist, PlantUML source/rendered diagrams, and cross-artifact review.
 - **Still pending**: T016 unavailable-activity recovery (former FR-014), explicitly deferred from `codex/005`.
 
 ## Verification evidence

@@ -2,7 +2,7 @@
 
 **Branch**: `codex/005` | **Date**: 2026-11-25 | **Spec**: [spec.md](spec.md)
 
-**Input**: Existing implementation documented from `/specs/005/spec.md`.
+**Input**: Existing implementation documented from `/specs/005-role-return/spec.md`.
 
 ## Summary
 
@@ -30,7 +30,7 @@ Provide a global return-to-role control for teacher and student flows. Retire th
 | IV. Attributed Dependencies and Materials | Pass | No new dependency or external material introduced. |
 | V. Verifiable Behavior | Pass | Server transaction and Vitest checks verify the state transitions. |
 | VI. Clear Structure and Consistent Data | Pass | Shared UI shell, typed client API, service transaction, and retirement guards follow feature boundaries. |
-| VII. Subfeature-Based Delivery | Pass | Dedicated `codex/005` branch and `specs/005` documentation. |
+| VII. Subfeature-Based Delivery | Pass | Dedicated `codex/005` branch and `specs/005-role-return` documentation. |
 | VIII. Design-First with PlantUML | Pass after this documentation pass | Component, class, and sequence diagrams are supplied in `diagrams/005-role-return-*` and rendered as PNG. |
 
 ## Project Structure
@@ -38,7 +38,7 @@ Provide a global return-to-role control for teacher and student flows. Retire th
 ### Documentation (this feature)
 
 ```text
-specs/005/
+specs/005-role-return/
 ├── spec.md
 ├── plan.md
 ├── research.md

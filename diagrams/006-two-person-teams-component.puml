@@ -1,0 +1,14 @@
+@startuml
+left to right direction
+actor 學生
+rectangle "小組功能" {
+  component "學生加入流程" as Flow
+  component "小組服務" as Service
+  component "活動小組資料" as Store
+}
+學生 --> Flow
+Flow --> Service : 建組 / 輸入邀請碼
+Service --> Store : 驗證活動、名額、成員
+Store --> Service : 小組與成員狀態
+Service --> Flow : 結果與邀請碼
+@enduml
