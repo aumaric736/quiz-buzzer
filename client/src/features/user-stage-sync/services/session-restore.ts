@@ -1,6 +1,10 @@
 import type { ActivitySnapshot, UserSession } from '@quiz-buzzer/shared';
 import { getActivity } from './activity-api.js';
-import { restoreLocalSession } from './session-api.js';
+import { ApiError, restoreLocalSession } from './session-api.js';
+
+export function isRetiredSessionError(reason: unknown): reason is ApiError {
+  return reason instanceof ApiError && reason.code === 'SESSION_NOT_FOUND';
+}
 
 export interface RestoredApplicationSession {
   session: UserSession;

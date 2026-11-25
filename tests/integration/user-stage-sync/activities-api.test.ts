@@ -55,4 +55,33 @@ describe('activity API', () => {
     expect(db.prepare('SELECT phase, revision FROM activities WHERE id = ?').get(activity.activityId)).toEqual({ phase: '準備中', revision: 0 });
     expect((await post('/api/activities', student.sessionId, {})).status).toBe(403);
   });
+
+  it('retires only the teacher session while leaving the activity phase and student session unchanged', async () => {
+    const teacher = createSession(db, 'teacher');
+    const student = createSession(db, 'student');
+    const created = await post('/api/activities', teacher.sessionId, {});
+    const activity = await created.json() as { activityId: string };
+    seedGuidedNotesQuestions(db, activity.activityId);
+    const joined = await post(`/api/activities/${activity.activityId}/groups`, student.sessionId, { groupName: 'Green Team' });
+    expect(joined.status).toBe(201);
+    await post(`/api/activities/${activity.activityId}/phase`, teacher.sessionId, { phase: '搶答進行中' });
+    const studentBefore = db.prepare('SELECT role, activity_id, group_id, retired_at FROM user_sessions WHERE id = ?').get(student.sessionId);
+    const activityBefore = db.prepare('SELECT phase, revision, updated_at FROM activities WHERE id = ?').get(activity.activityId);
+
+    const reset = await fetch(`${baseUrl}/api/sessions/${teacher.sessionId}/reset-context`, { method: 'POST' });
+    expect(reset.status).toBe(200);
+    expect(await reset.json()).toMatchObject({ status: 'retired', activityId: null, groupId: null });
+    expect(db.prepare('SELECT role, activity_id, group_id, retired_at FROM user_sessions WHERE id = ?').get(student.sessionId)).toEqual(studentBefore);
+    expect(db.prepare('SELECT phase, revision, updated_at FROM activities WHERE id = ?').get(activity.activityId)).toEqual(activityBefore);
+    expect(db.prepare('SELECT activity_id, group_id, retired_at FROM user_sessions WHERE id = ?').get(teacher.sessionId))
+      .toMatchObject({ activity_id: null, group_id: null, retired_at: expect.any(String) });
+
+    const studentSnapshot = await fetch(`${baseUrl}/api/activities/${activity.activityId}`, { headers: { 'X-Local-Session-Id': student.sessionId } });
+    expect(studentSnapshot.status).toBe(200);
+    expect(await studentSnapshot.json()).toMatchObject({ phase: '搶答進行中', revision: 1 });
+    const retiredTeacherOperation = await post(`/api/activities/${activity.activityId}/phase`, teacher.sessionId, { phase: '已結束' });
+    expect(retiredTeacherOperation.status).toBe(404);
+    expect(await retiredTeacherOperation.json()).toMatchObject({ code: 'SESSION_NOT_FOUND' });
+  });
+
 });

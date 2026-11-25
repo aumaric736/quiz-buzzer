@@ -5,6 +5,7 @@ import { computeAnswerSnapshotHash, validateAnswerResults } from './build-export
 import { detectGuidedNotesLayout, LayoutRecognitionError } from '../domain/layout-recognizer.js';
 import { getGuidedNotesSource, listActivityQuestions, listGuidedNotesMappings } from '../persistence/guided-notes-repository.js';
 import { SheetsGatewayError, type SheetsCell, type SheetsCellUpdate, type SheetsGateway, type SheetsWorksheetGrid } from '../google-sheets/sheets-gateway.js';
+import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
 
 interface ExportAttemptRow {
   id: string;
@@ -50,6 +51,7 @@ export async function confirmGuidedNotesExport(
   activityId: string,
   previewId: string
 ): Promise<GuidedNotesExportResult> {
+  requireActiveSession(db, sessionId);
   const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
   if (session.role !== 'teacher') throw new HttpError(403, 'TEACHER_REQUIRED', '只有老師可以確認 Guided Notes 匯出。');

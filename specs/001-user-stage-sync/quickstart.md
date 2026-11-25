@@ -75,6 +75,20 @@ tests.
 9. End the activity. Confirm all views display `已結束`, answer-status reads are
    permitted for future answer data, new groups cannot join, and the answer-
    attempt check returns `ANSWER_ACTIVITY_ENDED` with a clear message.
+10. From a teacher flow before and after activity creation, and from a student
+    flow before and after joining (including after phase changes), activate
+    `返回角色選擇`. Verify the old session is retired before its browser id is
+    cleared, student `activityId`/`groupId` references are cleared, activity
+    and group rows/name reservations remain, and choosing either role creates
+    a fresh session without inherited context. Simulate a failed reset and
+    verify the current flow remains available for retry.
+    With a student view connected to a live activity, return the teacher to
+    role selection and verify the activity phase and student session remain
+    unchanged; the activity is neither ended nor transferred.
+11. Unavailable-activity recovery is deferred. For this implementation, verify
+    that a retired session cannot be restored, a missing session id can be
+    discarded, and a failed context reset shows an error while keeping the
+    current view available for retry.
 
 ## Completion Evidence
 

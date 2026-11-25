@@ -28,11 +28,11 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
       catch { sendError(socket, 'INVALID_MESSAGE', 'WebSocket 訊息格式無效。'); return; }
       if (!isSubscription(payload)) { sendError(socket, 'INVALID_MESSAGE', '僅接受有效的活動訂閱訊息。'); return; }
 
-      const session = db.prepare('SELECT role, activity_id, group_id FROM user_sessions WHERE id = ?').get(payload.sessionId) as
-        { role: Role; activity_id: string | null; group_id: string | null } | undefined;
+      const session = db.prepare('SELECT role, activity_id, group_id, retired_at FROM user_sessions WHERE id = ?').get(payload.sessionId) as
+        { role: Role; activity_id: string | null; group_id: string | null; retired_at: string | null } | undefined;
       const activity = db.prepare('SELECT id, phase, revision, created_by_session_id FROM activities WHERE id = ?').get(payload.activityId) as
         { id: string; phase: ActivityPhase; revision: number; created_by_session_id: string } | undefined;
-      if (!session || !activity) { sendError(socket, 'SUBSCRIPTION_DENIED', '找不到工作階段或活動，請重新整理畫面。'); return; }
+      if (!session || session.retired_at || !activity) { sendError(socket, 'SUBSCRIPTION_DENIED', '找不到工作階段或活動，請重新整理畫面。'); return; }
       const isActivityOwner = session.role === 'teacher' && activity.created_by_session_id === payload.sessionId;
       const isJoinedStudent = session.role === 'student' && session.activity_id === payload.activityId
         && session.group_id !== null
@@ -51,6 +51,8 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
     const encoded = JSON.stringify(event);
     for (const [socket, subscription] of subscriptions) {
       if (subscription.activityId === event.activityId && socket.readyState === socket.OPEN) {
+        const session = db.prepare('SELECT retired_at FROM user_sessions WHERE id = ?').get(subscription.sessionId) as { retired_at: string | null } | undefined;
+        if (!session || session.retired_at) { subscriptions.delete(socket); continue; }
         try { socket.send(encoded); }
         catch { subscriptions.delete(socket); }
       }
@@ -63,8 +65,8 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
     const encoded = JSON.stringify(event);
     for (const [socket, subscription] of subscriptions) {
       if (subscription.activityId !== event.activityId || subscription.sessionId !== activity.owner || socket.readyState !== socket.OPEN) continue;
-      const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(subscription.sessionId) as { role: Role } | undefined;
-      if (session?.role !== 'teacher') continue;
+      const session = db.prepare('SELECT role, retired_at FROM user_sessions WHERE id = ?').get(subscription.sessionId) as { role: Role; retired_at: string | null } | undefined;
+      if (session?.role !== 'teacher' || session.retired_at) { subscriptions.delete(socket); continue; }
       try { socket.send(encoded); } catch { subscriptions.delete(socket); }
     }
   };

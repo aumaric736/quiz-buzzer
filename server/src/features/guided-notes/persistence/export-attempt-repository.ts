@@ -1,6 +1,7 @@
 import type { GuidedNotesExportResult } from '@quiz-buzzer/shared';
 import { HttpError } from '../../../api/validation.js';
 import type { SqliteDatabase } from '../../user-stage-sync/persistence/database.js';
+import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
 
 interface ExportAttemptRecord {
   id: string;
@@ -20,6 +21,7 @@ function parseQuestionNumbers(value: string): number[] {
 }
 
 export function getExportAttemptResult(db: SqliteDatabase, sessionId: string, activityId: string, exportId: string): GuidedNotesExportResult {
+  requireActiveSession(db, sessionId);
   const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
   if (session.role !== 'teacher') throw new HttpError(403, 'TEACHER_REQUIRED', '只有老師可以查詢 Guided Notes 匯出結果。');

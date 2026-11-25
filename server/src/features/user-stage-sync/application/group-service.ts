@@ -15,8 +15,9 @@ export function enrollGroup(db: SqliteDatabase, sessionId: string, activityId: s
   const normalizedName = normalizeGroupName(displayName);
 
   const enroll = db.transaction((): GroupRecord => {
-    const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
+    const session = db.prepare('SELECT role, retired_at FROM user_sessions WHERE id = ?').get(sessionId) as { role: string; retired_at: string | null } | undefined;
     if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
+    if (session.retired_at) throw new HttpError(404, 'SESSION_NOT_FOUND', '此工作階段已結束，請重新選擇角色。');
     if (session.role !== 'student') throw new HttpError(403, 'STUDENT_REQUIRED', '只有學生可以加入活動組別。');
     const activity = db.prepare('SELECT phase FROM activities WHERE id = ?').get(activityId) as { phase: string } | undefined;
     if (!activity) throw new HttpError(404, 'ACTIVITY_NOT_FOUND', '找不到此活動，請確認活動代碼。');

@@ -1,7 +1,9 @@
 import type { SqliteDatabase } from '../persistence/database.js';
 import { HttpError } from '../../../api/validation.js';
+import { requireActiveSession } from './session-service.js';
 
 export function checkAnswerAttempt(db: SqliteDatabase, sessionId: string, activityId: string): { allowed: true } {
+  requireActiveSession(db, sessionId);
   const session = db.prepare('SELECT role, activity_id, group_id FROM user_sessions WHERE id = ?').get(sessionId) as
     { role: string; activity_id: string | null; group_id: string | null } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');

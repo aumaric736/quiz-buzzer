@@ -5,10 +5,12 @@ import type { SqliteDatabase } from '../../user-stage-sync/persistence/database.
 import { detectGuidedNotesLayout, LayoutRecognitionError } from '../domain/layout-recognizer.js';
 import { getGuidedNotesSource, listActivityQuestions, listGuidedNotesMappings } from '../persistence/guided-notes-repository.js';
 import { SheetsGatewayError, type SheetsGateway } from '../google-sheets/sheets-gateway.js';
+import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
 
 const PREVIEW_LIFETIME_MS = 15 * 60 * 1000;
 
 function requireTeacherForEndedActivity(db: SqliteDatabase, sessionId: string, activityId: string): void {
+  requireActiveSession(db, sessionId);
   const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
   if (session.role !== 'teacher') throw new HttpError(403, 'TEACHER_REQUIRED', '只有老師可以準備 Guided Notes 匯出。');

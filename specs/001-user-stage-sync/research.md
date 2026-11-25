@@ -108,6 +108,43 @@ later subfeature, where its data contract and credential model can be specified.
   dependency and configuration surface.
 - **Source**: [Vitest guide](https://main.vitest.dev/guide/).
 
+### Support all-state role changes and preserve activity data
+
+- **Decision**: Make `返回角色選擇` available throughout every teacher and
+  student flow after role selection. Atomically clear and retire only the
+  session that initiated the action. When that session belongs to a teacher,
+  leave the activity phase and all other student sessions unchanged; do not
+  end the activity or hand off control. Clear the old session's
+  `activity_id` and `group_id`
+  and set its `retired_at`; the browser then removes its old session id. Retired
+  sessions cannot be restored or used for activity operations. A newly selected
+  role creates a new active session. Keep the role on the retired record as
+  historical data only. Unavailable-activity state and recovery are specified
+  by FR-014 but deferred outside `codex/005`; they require a later data-lifecycle
+  decision and implementation.
+- **Rationale**: Resetting only the initiating session prevents a user changing
+  roles from unexpectedly disrupting connected students or changing the
+  classroom phase. Keeping the activity record also preserves group-name
+  uniqueness and its historical creator reference. A future unavailable state
+  instead of physically deleting an activity avoids the existing foreign-key
+  cascade deleting its groups; that state is deferred outside `codex/005`.
+  Retiring the
+  session clears the prior active role/context without deleting a teacher
+  session referenced by `activities.created_by_session_id`. Retaining the group
+  row preserves the user's chosen behavior and activity-scoped name uniqueness.
+  Clearing only browser storage would leave server-side state active.
+- **Failure handling**: If the session is already missing, the client may
+  discard the invalid local id and return to role selection. If the service is
+  reachable but a reset fails, keep the current flow available and explain
+  that it can be retried; do not report a successful reset before the database
+  update completes.
+- **Alternatives considered**: Automatically ending the activity would change
+  the shared phase and disrupt students; handing off control would introduce
+  ownership-transfer behavior outside this feature. Physically deleting the
+  activity cascades to its groups; deleting the old session can break activity
+  ownership references; clearing only local storage would leave server-side
+  context active.
+
 ### Defer Google Sheets access to a later subfeature
 
 - **Decision**: Do not add Sheets endpoints, database fields, Google credentials,
