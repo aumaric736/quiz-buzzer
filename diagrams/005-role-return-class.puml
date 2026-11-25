@@ -1,0 +1,46 @@
+@startuml
+title 005 - Return to role selection (classes)
+class ApplicationShell {
+  +roleReturnVisible: boolean
+  +onReturned(): void
+}
+class ReturnToRoleControl {
+  +visible: boolean
+  +onReturned(): void
+  +handleReturn(): Promise<void>
+}
+class SessionApi {
+  +resetLocalSession(sessionId): Promise<void>
+  +retireBeforeClearingSession(id, reset, clear): Promise<void>
+}
+class SessionRoutes {
+  +POST /api/sessions/:sessionId/reset-context
+}
+class SessionService {
+  +retireSession(sessionId): void
+  +getSession(sessionId): Session
+}
+class UserSession {
+  +id: string
+  +role: teacher | student
+  +activity_id: string?
+  +group_id: string?
+  +retired_at: string?
+  +updated_at: string
+}
+class Activity {
+  +phase: string
+  +revision: number
+}
+class Group {
+  +display_name: string
+}
+
+ApplicationShell *-- ReturnToRoleControl
+ReturnToRoleControl --> SessionApi
+SessionApi ..> SessionRoutes : HTTP
+SessionRoutes --> SessionService
+SessionService --> UserSession : retires one
+UserSession --> Activity : references; retained
+UserSession --> Group : references cleared on retirement
+@enduml

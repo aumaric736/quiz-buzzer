@@ -1,0 +1,32 @@
+@startuml
+title 005 - Return to role selection (sequence)
+actor User
+participant "ApplicationShell /\nReturnToRoleControl" as UI
+participant "session-api" as Client
+participant "Session Routes" as API
+participant "Session Service" as Service
+database SQLite
+
+User -> UI : activate return control
+UI -> Client : load local session id
+Client -> API : POST /sessions/{id}/reset-context
+API -> Service : retire session(id)
+Service -> SQLite : transaction: clear activity/group refs; set retired_at/updated_at
+SQLite --> Service : commit
+Service --> API : success
+API --> Client : success
+Client -> UI : clear local id
+UI -> UI : render role chooser
+
+alt missing session
+  API --> Client : 404 SESSION_NOT_FOUND
+  Client -> UI : clear stale id; render chooser
+else transient/API error
+  API --> Client : error
+  Client -> UI : keep id and current flow; show retryable error
+end
+note over SQLite
+Activity, group and other-session rows
+remain unchanged.
+end note
+@enduml
