@@ -13,11 +13,13 @@ database "本機活動資料" as Store
 
 老師 --> UI
 學生 --> UI
-UI --> Roles : 選擇角色／加入活動
+UI --> Roles : 選擇角色／返回角色選擇／加入活動
 Roles --> Stage : 建立／查詢／切換活動
 Stage --> Store : 驗證並保存階段
 Stage --> Sync : 階段變更事件
 Sync --> UI : 通知所有活動畫面
+Roles --> Store : 退役舊 session 並清除活動／組別參照
+Stage --> Store : 後續 FR-014：標記活動不可用
 UI --> AnswerView : 查詢作答狀況
 AnswerView --> Stage : 檢查活動階段
 AnswerView --> Store : 讀取作答狀況
@@ -33,6 +35,8 @@ note right of AnswerView
   其他組別作答狀況
 end note
 note bottom of Store
-  本機模擬；不要求外部設備伺服器
+  本機模擬；活動與組別資料保留
+  組別名稱在活動內仍唯一
+  不可用狀態與復原屬 FR-014，延期於 codex/005
 end note
 @enduml

@@ -2,6 +2,10 @@ import type { Role, UserSession } from '@quiz-buzzer/shared';
 
 const DEFAULT_API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:3000';
 
+export class ApiError extends Error {
+  constructor(message: string, readonly code: string, readonly status: number) { super(message); }
+}
+
 async function request<T>(url: string, init?: RequestInit, apiBase = DEFAULT_API_BASE): Promise<T> {
   let response: Response;
   try { response = await fetch(`${apiBase}${url}`, init); }
@@ -10,7 +14,8 @@ async function request<T>(url: string, init?: RequestInit, apiBase = DEFAULT_API
   if (!response.ok) {
     const message = typeof result === 'object' && result !== null && 'message' in result && typeof result.message === 'string'
       ? result.message : '要求失敗，請稍後再試。';
-    throw new Error(message);
+    const code = typeof result === 'object' && result !== null && 'code' in result && typeof result.code === 'string' ? result.code : 'REQUEST_FAILED';
+    throw new ApiError(message, code, response.status);
   }
   return result as T;
 }
@@ -23,6 +28,24 @@ export function createLocalSession(role: Role): Promise<UserSession> {
 
 export function restoreLocalSession(sessionId: string, apiBase = DEFAULT_API_BASE): Promise<UserSession> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}`, undefined, apiBase);
+}
+
+export function resetLocalSession(sessionId: string): Promise<{ sessionId: string; status: 'retired'; activityId: null; groupId: null }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/reset-context`, { method: 'POST' });
+}
+
+export async function retireBeforeClearingSession(
+  sessionId: string | null,
+  retire: (id: string) => Promise<unknown>,
+  clear: () => void
+): Promise<void> {
+  if (sessionId) {
+    try { await retire(sessionId); }
+    catch (reason) {
+      if (!(reason instanceof ApiError) || reason.code !== 'SESSION_NOT_FOUND') throw reason;
+    }
+  }
+  clear();
 }
 
 export function saveLocalSessionId(sessionId: string): void {

@@ -21,6 +21,9 @@
 - [x] Edge cases are identified
 - [x] Scope is clearly bounded
 - [x] Dependencies and assumptions identified
+- [x] Unavailable-activity recovery has an actionable return control and verifies that stale session context is cleared before role reselection
+- [x] Unavailable activities retain activity/group records while the old session is retired and cannot be restored
+- [x] Teacher and student flows can return to role selection from every post-selection state, with session/group cleanup and fresh-session acceptance coverage
 
 ## Feature Readiness
 
@@ -33,6 +36,9 @@
 
 - Reviewed each checklist item against the specification. Acceptance scenarios cover
   teacher creation and transitions, student group enrollment, synchronized views,
-  privacy before activity end, blocked answer attempts, and refresh recovery.
+  privacy before activity end, blocked answer attempts, refresh recovery, and the
+  all-state role return, student group-association cleanup, fresh role selection,
+  and the unavailable-activity path that preserves activity/group records and
+  the group's reserved name.
 - The PlantUML diagrams are architecture artifacts required by the project
   constitution and are maintained separately in the repository-root `diagrams/` directory.

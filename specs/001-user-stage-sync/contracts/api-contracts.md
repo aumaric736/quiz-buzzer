@@ -27,6 +27,7 @@ Request: `{ "role": "teacher" | "student" }`
 Response `201`: `{ "sessionId": string, "role": "teacher" | "student" }`
 
 Invalid or missing roles return `400 INVALID_ROLE`.
+New sessions are active and have no activity or group context.
 
 ### `GET /api/sessions/{sessionId}`
 
@@ -34,7 +35,26 @@ Returns the persisted local role/activity/group context for refresh recovery.
 
 Response `200`: `{ "sessionId": string, "role": "teacher" | "student", "activityId": string | null, "groupId": string | null, "groupName": string | null }`; `groupName` is derived from the saved group row for display during refresh recovery.
 
-Missing sessions return `404 SESSION_NOT_FOUND`.
+Missing or retired sessions return `404 SESSION_NOT_FOUND`; a retired session's role is not restored.
+
+### `POST /api/sessions/{sessionId}/reset-context`
+
+Clears the selected session's `activityId` and `groupId` references after the
+user chooses to return to role selection, and retires the session. It applies
+to any active teacher or student session regardless of activity, phase, or
+enrollment state. It modifies only the addressed session and does not change
+the activity phase or any other session. The operation is transactional and
+does not delete the activity/group rows or release the activity-scoped group
+name. The browser removes the old local
+session id after a successful reset; the next role choice creates a new active
+session. A repeated reset of an already-retired session succeeds idempotently.
+
+Response `200`: `{ "sessionId": string, "status": "retired", "activityId": null, "groupId": null }`
+
+Missing sessions return `404 SESSION_NOT_FOUND`; the client may discard that
+already-invalid local id and return to role selection. If the service cannot
+complete the reset, the client keeps the current flow available for retry and
+does not silently claim the old context was cleared.
 
 ### `POST /api/activities`
 
@@ -54,7 +74,9 @@ reconnect recovery.
 
 Response `200`: `{ "activityId": string, "phase": ActivityPhase, "revision": number }`
 
-Missing activities return `404 ACTIVITY_NOT_FOUND`.
+Missing activities return `404 ACTIVITY_NOT_FOUND`. The future FR-014
+`ACTIVITY_UNAVAILABLE` response and unavailable-activity guards are deferred
+outside `codex/005`.
 
 ### `POST /api/activities/{activityId}/groups`
 
@@ -66,7 +88,8 @@ Response `201`: `{ "groupId": string, "displayName": string, "activityId": strin
 
 Blank names return `400 INVALID_GROUP_NAME`; duplicate normalized names return
 `409 GROUP_NAME_TAKEN`; enrollment after preparation returns
-`409 ENROLLMENT_CLOSED`.
+`409 ENROLLMENT_CLOSED`. Handling an unavailable activity
+(`404 ACTIVITY_UNAVAILABLE`) is deferred to the future FR-014 implementation.
 
 Successful enrollment updates the student session's `activityId` and `groupId`
 in the same transaction as the group insert. Rejected enrollment leaves the
@@ -81,7 +104,8 @@ Request: `{ "phase": "搶答進行中" | "已結束" }`
 Response `200`: `{ "activityId": string, "phase": ActivityPhase, "revision": number }`
 
 Invalid transitions return `409 INVALID_PHASE_TRANSITION`; the saved phase does
-not change.
+not change. Rejection for unavailable activities under FR-014 is deferred
+outside `codex/005`.
 
 ### `POST /api/activities/{activityId}/answer-attempt-check`
 
@@ -135,8 +159,9 @@ the server does not echo submitted credentials or raw payloads.
 After an authorized subscription, the server sends
 `{ "type": "activity.subscribed", "activityId": string, "phase": ActivityPhase, "revision": number }`.
 The teacher must be the activity creator; a student must already be enrolled in
-the activity. Denied or malformed subscriptions receive a sanitized protocol
-error and are not added to the subscriber list.
+the activity. Retired sessions are denied with a sanitized protocol error and
+are not added to the subscriber list. Unavailable-activity subscription denial
+is part of future FR-014 work and is deferred outside `codex/005`.
 
 ## Out of Scope
 

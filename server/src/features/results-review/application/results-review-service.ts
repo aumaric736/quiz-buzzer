@@ -2,8 +2,10 @@ import type { TeacherActivityListResponse, TeacherReviewRecordsResponse } from '
 import { HttpError } from '../../../api/validation.js';
 import type { SqliteDatabase } from '../../user-stage-sync/persistence/database.js';
 import { listOwnedActivities, loadReviewRecords } from '../persistence/results-review-repository.js';
+import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
 
 function requireTeacherSession(db: SqliteDatabase, sessionId: string): void {
+  requireActiveSession(db, sessionId);
   const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
   if (session.role !== 'teacher') throw new HttpError(403, 'TEACHER_REQUIRED', '只有老師可以查看活動歷史與檢討紀錄。');
@@ -15,6 +17,7 @@ export function getTeacherActivities(db: SqliteDatabase, sessionId: string): Tea
 }
 
 export function getTeacherReviewRecords(db: SqliteDatabase, sessionId: string, activityId: string): TeacherReviewRecordsResponse {
+  requireActiveSession(db, sessionId);
   const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
   const activity = db.prepare(`SELECT phase, created_by_session_id AS owner

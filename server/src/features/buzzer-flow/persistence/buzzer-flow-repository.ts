@@ -1,5 +1,6 @@
 import type { SqliteDatabase } from '../../user-stage-sync/persistence/database.js';
 import { HttpError } from '../../../api/validation.js';
+import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
 
 export interface AcceptedAnswerSubmission {
   acceptedOrder: number;
@@ -28,6 +29,7 @@ function rejectDuplicateSubmission(): never {
 }
 
 export function acceptAnswerSubmission(db: SqliteDatabase, input: AcceptAnswerInput): AcceptedAnswerSubmission {
+  requireActiveSession(db, input.sessionId);
   const accept = db.transaction(() => {
     const session = db.prepare('SELECT role, activity_id AS activityId, group_id AS groupId FROM user_sessions WHERE id = ?')
       .get(input.sessionId) as { role: string; activityId: string | null; groupId: string | null } | undefined;

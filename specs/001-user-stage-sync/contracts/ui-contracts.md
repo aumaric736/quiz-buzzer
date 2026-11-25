@@ -11,6 +11,18 @@ not framework-specific components or network endpoints.
 - Selecting a role does not create an account or claim real identity.
 - Invalid or missing role input is rejected with a clear prompt to select one
   of the supported roles.
+- After selecting a role, the user can return to role selection from every
+  subsequent teacher or student flow, regardless of activity or phase state.
+- Returning retires the current session and clears its activity/group
+  associations before showing role selection. Group records and reserved names
+  remain; a new role choice starts with a fresh session and no inherited
+  context.
+- If session reset fails, keep the user in the current flow, explain the error,
+  and allow retry. Do not show role selection as though the old session was
+  cleared.
+- If a teacher returns while students are using the activity, retire only the
+  teacher's session. Leave the activity phase and student sessions unchanged;
+  do not end the activity or transfer its control.
 
 ## Teacher Activity Flow
 
@@ -37,8 +49,18 @@ not framework-specific components or network endpoints.
 - A view that refreshes or reconnects restores its role and activity context,
   then displays the latest saved phase. A stale cached phase is never written
   over the saved phase during restoration.
-- If the saved activity no longer exists, show a clear recovery error and a way
-  back to activity selection.
+- The unavailable-activity recovery message and action in FR-014 are deferred
+  outside `codex/005`.
+- Activating the button clears the current session's activity/group references
+  and retires that session through the local service, preserves the activity,
+  group row, and reserved name, and clears the old browser session id before
+  showing role selection. A new role choice creates a fresh session with no
+  inherited role, activity, or group context.
+- Retired sessions cannot be restored or used for activity operations; the
+  retained role value is historical and is not an active selection.
+- If the session itself no longer exists, discard its invalid browser id and
+  return to role selection. If the service cannot clear an existing session's
+  context, explain the failure and allow the user to retry.
 
 ## Answer-Status Visibility
 

@@ -3,6 +3,7 @@ import type { BuzzerQuestionUpdatedEvent, BuzzerQuestionsResponse } from '@quiz-
 import { HttpError, isRecord, requireNonEmptyString } from '../../../api/validation.js';
 import type { SqliteDatabase } from '../../user-stage-sync/persistence/database.js';
 import { submitAnswer } from '../application/buzzer-flow-service.js';
+import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
 
 function requestSessionId(request: Request): string {
   const value = request.header('X-Local-Session-Id');
@@ -11,6 +12,7 @@ function requestSessionId(request: Request): string {
 }
 
 function requireActivityAccess(db: SqliteDatabase, sessionId: string, activityId: string): void {
+  requireActiveSession(db, sessionId);
   const session = db.prepare('SELECT role, activity_id AS activityId, group_id AS groupId FROM user_sessions WHERE id = ?')
     .get(sessionId) as { role: string; activityId: string | null; groupId: string | null } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');

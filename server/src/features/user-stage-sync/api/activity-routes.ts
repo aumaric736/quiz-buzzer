@@ -23,7 +23,8 @@ export function activityRoutes(db: SqliteDatabase, publishPhase: PhasePublisher 
   router.get('/api/activities/:activityId', (request, response, next) => {
     try {
       const sessionId = requestSessionId(request);
-      if (!db.prepare('SELECT id FROM user_sessions WHERE id = ?').get(sessionId)) {
+      const session = db.prepare('SELECT id, retired_at FROM user_sessions WHERE id = ?').get(sessionId) as { id: string; retired_at: string | null } | undefined;
+      if (!session || session.retired_at) {
         throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
       }
       const activityId = requireNonEmptyString(request.params.activityId, 'activityId', 100);

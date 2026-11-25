@@ -9,6 +9,7 @@ participant "作答階段許可檢查" as AnswerGuard
 participant "作答狀況存取控制" as AnswerView
 participant "本機活動資料" as Store
 participant "同步通知" as Sync
+actor 使用者
 
 老師 -> TeacherUI : 建立活動
 TeacherUI -> Stage : 建立活動
@@ -55,9 +56,47 @@ AnswerGuard --> StudentUI : 允許進入後續作答流程
 StudentUI -> Stage : 恢復活動狀態
 Stage -> Store : 讀取 session 的角色、活動與組別 context
 Store --> Stage : 已保存的角色／活動識別／組別識別
-Stage -> Store : 讀取最新活動階段
-Store --> Stage : 目前階段
-Stage --> StudentUI : 恢復正確階段
+alt 活動可用
+  Stage -> Store : 讀取最新活動階段
+  Store --> Stage : 目前階段
+  Stage --> StudentUI : 恢復正確階段
+else （後續 FR-014）活動已停用且不可恢復
+  Stage --> StudentUI : 後續功能：顯示無法恢復說明與「返回角色選擇」按鈕
+end
+note right of Stage
+  FR-014 不可用活動復原延期於 codex/005，
+  由後續功能決定不可用狀態生命週期。
+end note
+
+opt 使用者在任何已選角色後的流程狀態按下「返回角色選擇」
+  alt 目前為老師流程
+    使用者 -> TeacherUI : 按下返回角色選擇
+    TeacherUI -> Stage : POST session context reset
+  else 目前為學生流程
+    使用者 -> StudentUI : 按下返回角色選擇
+    StudentUI -> Stage : POST session context reset
+  end
+  Stage -> Store : 交易：退役舊 session、清除 activityId／groupId
+  note right of Store
+    保留活動與組別資料列及活動內名稱唯一性。
+    老師返回時不改變活動階段或其他學生 session，且不移交控制權。
+    服務失敗時保留目前畫面並允許重試。
+  end note
+  Store --> Stage : context reset 成功
+  alt 老師使用者
+    Stage --> TeacherUI : 回報舊 session 已退役
+    TeacherUI -> TeacherUI : 清除瀏覽器舊 session id
+    TeacherUI --> 使用者 : 顯示老師／學生選擇
+    使用者 -> TeacherUI : 重新選擇老師或學生
+    TeacherUI -> Stage : 建立新的 active role session
+  else 學生使用者
+    Stage --> StudentUI : 回報舊 session 已退役
+    StudentUI -> StudentUI : 清除瀏覽器舊 session id
+    StudentUI --> 使用者 : 顯示老師／學生選擇
+    使用者 -> StudentUI : 重新選擇老師或學生
+    StudentUI -> Stage : 建立新的 active role session
+  end
+end
 
 老師 -> TeacherUI : 結束活動
 TeacherUI -> Stage : 切換為已結束

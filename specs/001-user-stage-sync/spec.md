@@ -1,6 +1,6 @@
 # Feature Specification: 使用者角色與活動階段同步
 
-**Feature Branch**: `codex/001-user-stage-sync`
+**Feature Branch**: `codex/005`
 
 **Created**: 2026-11-18
 
@@ -13,6 +13,14 @@
 ### Session 2026-11-18
 
 - Q: During which activity phases may a student group join? → A: Only during preparation.
+
+### Session 2026-11-25
+
+- Q: What must happen to prior role, activity, and group choices when a user returns to role selection? → A: Clear all prior choices; a student must leave the previously joined group before selecting a role again.
+- Q: How should the previous group be handled when a student leaves it on returning to role selection? → A: Clear the student's session association with the group but retain the group record; its name remains in use.
+- Q: What does it mean when the original activity cannot be restored while its group must remain reserved? → A: (Future FR-014; deferred outside `codex/005`.) Treat the activity as unavailable but retain its activity and group records; retire the old session so it cannot be restored, and create a fresh session after role reselection.
+- Q: When may a user return to role selection and choose a role again? → A: At any time after choosing teacher or student, regardless of activity, phase, or enrollment state.
+- Q: If a teacher returns to role selection during an activity, what should happen to the activity and any students still using it? → A: Retire only the teacher's session; leave the activity and student sessions unchanged.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -73,12 +81,16 @@
 
 **Why this priority**: 斷線或重新整理不應讓使用者看到過期階段或被迫重新加入。
 
-**Independent Test**: 加入活動並切換階段，模擬中斷後重新整理，確認角色、活動及目前階段恢復正確。
+**Independent Test**: 以老師及學生身分分別進入活動流程的不同狀態，使用返回控制並重新選角；確認舊工作階段失效、學生組別關聯解除但組別紀錄及名稱保留，且新工作階段沒有舊上下文。不可用活動復原（FR-014）保留為後續功能，不屬於 `codex/005` 驗收範圍。
 
 **Acceptance Scenarios**:
 
 1. **Given** 使用者已在活動中且活動有目前階段，**When** 使用者重新整理頁面並恢復連線，**Then** 系統恢復其角色與活動，並顯示最新階段。
 2. **Given** 活動期間老師切換了階段，**When** 中斷中的使用者重新連線，**Then** 使用者看到最新階段而非中斷前快取的舊階段。
+3. **Given** 使用者重新整理或重新連線時原活動已被停用且不可恢復、但活動資料仍保留，**When** 系統檢查恢復狀態，**Then** 畫面顯示清楚的無法恢復說明及「返回角色選擇」按鈕；按下後使先前工作階段失效並清除先前活動及組別選擇，解除先前學生工作階段與組別的關聯但保留活動及組別紀錄，並返回老師／學生選擇畫面。此情境依 FR-014 延後至後續功能，不在 `codex/005` 實作或驗收。
+4. **Given** 使用者已選擇老師或學生並處於任何後續流程狀態，**When** 使用者使用畫面上可用的「返回角色選擇」按鈕，**Then** 系統使舊工作階段失效並清除活動及組別選擇；若先前為學生，解除舊工作階段與已加入組別的關聯但保留組別紀錄及已使用名稱，然後返回角色選擇。
+5. **Given** 使用者已返回角色選擇，**When** 使用者重新選擇老師或學生，**Then** 系統建立新的工作階段，且不恢復先前角色、活動或組別身分。
+6. **Given** 老師建立的活動仍有學生使用，**When** 老師從任何流程狀態返回角色選擇，**Then** 系統只退役該老師的工作階段；活動階段及其他學生工作階段維持原狀，不自動結束活動或移交管理權。
 
 ### Edge Cases
 
@@ -87,7 +99,12 @@
 - 準備中時學生嘗試作答，系統拒絕作答並告知尚未開始。
 - 已結束時學生嘗試作答，系統拒絕作答並告知活動已結束。
 - 活動處於搶答進行中時，階段狀態不能被空白或未知值覆蓋。
-- 重新整理時若原活動已不存在，系統清楚提示活動無法恢復，並提供返回活動選擇的方式。
+- 活動已停用且不可恢復時的提示與返回方式依 FR-014 延後至後續功能，不在 `codex/005` 範圍。
+- 使用者選擇角色後，在所有後續流程狀態都必須能操作「返回角色選擇」按鈕；操作後先前工作階段必須失效，活動及組別選擇必須清除，且使用者可重新選擇老師或學生。
+- 老師返回角色選擇時，只能清除並退役發起操作的老師工作階段；若活動仍有學生使用，活動階段及其他學生工作階段保持不變，不自動結束或移交活動。
+- 若復原時遇到不可用活動，畫面提供無法恢復說明及相同返回控制的要求屬於 FR-014，延後至後續功能。
+- 學生返回角色選擇時，必須清除該學生工作階段的組別關聯，但保留活動中的組別紀錄；該組別名稱仍視為已使用。重新選擇學生時不得沿用先前活動或組別身分。
+- （後續 FR-014）活動標記為不可用時不得恢復或加入該活動；其活動及組別紀錄仍保留，組別名稱在該活動範圍內仍視為已使用。
 - 活動未結束前，不論學生操作何種可用檢視路徑，均不得取得其他組別的作答狀況。
 
 ## Requirements *(mandatory)*
@@ -106,11 +123,13 @@
 - **FR-010**: 頁面重新整理或連線中斷後重新連線，系統 MUST 恢復使用者的角色、活動及伺服端目前階段；重新連線不得以過期狀態覆蓋目前狀態。
 - **FR-011**: 本功能 MUST 可在單機本機模擬中運作，不要求其他設備可連線的伺服器。
 - **FR-012**: 所有活動、組別及階段操作 MUST 驗證輸入與狀態，並以清楚訊息回報無效輸入或拒絕原因。
+- **FR-013**: 使用者選擇老師或學生後，在所有後續流程狀態 MUST 都能操作「返回角色選擇」控制。使用者啟動該控制後，系統 MUST 使先前工作階段失效、清除其活動及組別選擇，並返回老師／學生角色選擇畫面。若先前角色為學生，系統 MUST 解除該工作階段與已加入組別的關聯，但活動及組別紀錄 MUST 保留，且組別名稱仍視為已使用。若先前角色為老師且活動仍有其他學生使用，系統 MUST 只退役發起操作的老師工作階段，並 MUST NOT 改變活動階段或其他學生工作階段，也 MUST NOT 自動結束活動或移交管理權。使用者重新選擇角色後 MUST 建立新的工作階段，且 MUST NOT 恢復先前角色、活動或組別身分；若清除操作失敗，系統 MUST 留在目前流程並提供可重試的錯誤訊息。
+- **FR-014 (後續功能；不屬於 `codex/005`)**: 當重新整理或重新連線時發現原活動已停用且不可恢復時，系統 MUST 顯示清楚的無法恢復說明及 FR-013 所述的「返回角色選擇」控制；活動與組別紀錄 MUST 保留。不可用狀態的產生時機由活動資料生命週期決定，不在本功能中新增活動停用操作。
 
 ### Key Entities *(include if feature involves data)*
 
 - **使用者工作階段**: 代表本機模擬中的使用者角色，以及其目前所屬活動與組別（學生適用）。
-- **活動**: 由老師建立，具有唯一識別、目前階段及參與組別；階段依序為準備中、搶答進行中、已結束。
+- **活動**: 由老師建立，具有唯一識別、目前階段及參與組別；可用／不可用狀態與不可用活動復原屬於後續 FR-014 功能。階段依序為準備中、搶答進行中、已結束。
 - **組別**: 學生加入活動的單位，具有活動範圍內唯一的名稱。
 - **作答狀況**: 各組別在活動中的作答資訊；活動結束前對學生隱藏，活動結束後可供檢視。
 
@@ -124,12 +143,15 @@
 - **SC-004**: 100% 的「準備中」及「已結束」作答嘗試均被拒絕，並顯示對應階段的訊息。
 - **SC-005**: 在活動結束前，所有學生檢視路徑均無法顯示其他組別作答狀況；活動結束後可檢視。
 - **SC-006**: 使用者重新整理或重新連線後 3 秒內恢復正確活動階段，且與目前活動狀態一致。
+- **SC-007**: `codex/005` 驗收涵蓋老師與學生在活動建立、組別加入及各活動階段的流程狀態；所有這些狀態都能操作返回角色選擇控制。操作後舊工作階段失效、活動及組別選擇清除，學生的組別關聯解除而活動／組別紀錄及已使用名稱保留；重新選角會建立無舊上下文的新工作階段。老師離開仍有學生使用的活動時，驗收確認活動階段與其他學生工作階段均未改變。不可用活動的復原驗收屬後續 FR-014 功能。
 
 ## Assumptions
 
 - 本機模擬中的已連線畫面是同一執行環境內的老師及學生頁面；同步範圍限於本機，不代表跨設備連線。
 - 活動階段只能依「準備中 → 搶答進行中 → 已結束」前進，已結束為終態。
 - 活動階段及使用者加入資訊須在重新整理後仍可恢復；若應用程式資料被明確清除，該活動則不保證恢復。
+- 不可用活動的狀態、資料保留與復原方式由後續 FR-014 功能定義；`codex/005` 不新增不可用狀態欄位或處理流程。
+- 永久清除應用程式資料不屬於本功能。
 - 組別名稱去除前後空白後不得為空；重複判定忽略英文大小寫。
 - 本子功能包含作答階段許可檢查：準備中及已結束時拒絕，搶答進行中時回報允許進入後續作答流程。答案輸入、提交、保存及評分不屬於本子功能。
 - 作答狀況在活動結束後可供學生查看，呈現方式由後續子功能定義。

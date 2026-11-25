@@ -2,6 +2,7 @@ import type { AnswerStatusResponse, Role, TeacherQuestionStatus } from '@quiz-bu
 import type { SqliteDatabase } from '../persistence/database.js';
 import { HttpError } from '../../../api/validation.js';
 import { loadEndedAnswerResults } from '../../buzzer-flow/application/winning-answer-provider.js';
+import { requireActiveSession } from './session-service.js';
 
 function parseLiveAnswerParts(value: string | null): string[] {
   if (value === null) throw new HttpError(409, 'ANSWER_STATUS_INVALID', '已保存的作答狀況不完整，無法顯示即時結果。');
@@ -15,6 +16,7 @@ function parseLiveAnswerParts(value: string | null): string[] {
 }
 
 export function readAnswerStatus(db: SqliteDatabase, sessionId: string, activityId: string): AnswerStatusResponse {
+  requireActiveSession(db, sessionId);
   const session = db.prepare('SELECT role, activity_id AS activityId, group_id AS groupId FROM user_sessions WHERE id = ?').get(sessionId) as
     { role: Role; activityId: string | null; groupId: string | null } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');

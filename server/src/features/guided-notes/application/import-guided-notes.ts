@@ -4,8 +4,10 @@ import type { GuidedNotesImportRequest, GuidedNotesImportResponse, GuidedNotesWo
 import { detectGuidedNotesLayout, LayoutRecognitionError } from '../domain/layout-recognizer.js';
 import { saveGuidedNotesImport } from '../persistence/guided-notes-repository.js';
 import { SheetsGatewayError, type SheetsGateway } from '../google-sheets/sheets-gateway.js';
+import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
 
 function requireTeacherActivity(db: SqliteDatabase, sessionId: string, activityId: string): void {
+  requireActiveSession(db, sessionId);
   const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
   if (session.role !== 'teacher') throw new HttpError(403, 'TEACHER_REQUIRED', '只有老師可以匯入 Guided Notes。');

@@ -18,9 +18,24 @@ authenticated account.
 | `activityId` | No | Activity currently open in this session. |
 | `groupId` | No | Student's joined group; required for a student enrolled in an activity and absent for a teacher. |
 | `updatedAt` | Yes | Last session-context update. |
+| `retiredAt` | No | Timestamp when this context was retired; retired sessions cannot be restored or used for activity operations. The role remains historical data only. |
 
 The browser retains the local session id across refresh. The id restores a
 simulation context; it is not a secret or authorization token.
+
+When a user chooses to return to role selection from any post-role-selection
+flow, the local service atomically clears that session's
+`activityId` and `groupId`, sets `retiredAt`, and updates `updatedAt`. The client
+then removes the old session id from browser storage; choosing a role creates a
+fresh active session. Retired sessions cannot be restored, while the old role
+value remains historical data only. The reset does not delete the `Activity` or
+`Group` rows, so the group name remains reserved within its activity. Permanent
+data purge is outside this feature.
+
+When the retiring session belongs to a teacher, the reset affects only that
+teacher session. The activity phase and all other student sessions remain
+unchanged; the activity is not automatically ended and its control is not
+transferred to another session.
 
 ### Activity (`activities`)
 
@@ -34,6 +49,7 @@ Represents a teacher-created classroom activity.
 | `createdBySessionId` | Yes | Simulated teacher session that created the activity. |
 | `createdAt` | Yes | Creation timestamp. |
 | `updatedAt` | Yes | Last activity update timestamp. |
+| `unavailableAt` | Future FR-014 | Not implemented in `codex/005`; unavailable-activity state and recovery are deferred to a later feature. |
 
 ### Group (`groups`)
 
@@ -66,6 +82,8 @@ table or Sheets mapping is introduced by this plan.
   associate answer statuses with the group and activity.
 - One user session has one role and may reference one current activity;
   enrolled student sessions also reference their group.
+- A retired user session is inactive and cannot restore its role/activity/group
+  context; a newly selected role receives a new active session.
 - On refresh, the session API derives the student's `groupName` from the linked
   group row for display; the name is not duplicated in the session table.
 - Creating an activity stores its id on the creating teacher session. Successful
@@ -73,6 +91,22 @@ table or Sheets mapping is introduced by this plan.
   the same transaction; rejected operations do not change the session context.
 - Activity, group, and session rows persist in SQLite so refresh/reconnect can
   reload the latest activity phase.
+- Returning to role selection clears the old session's activity/group
+  references and retires the old session without deleting the activity or group
+  rows. A newly selected role starts a fresh session and does not inherit the old
+  session context.
+- Retiring a teacher session leaves the activity phase and other student session
+  records unchanged; no activity end or control transfer occurs as a side effect.
+
+## Future Scope: Activity Availability Lifecycle (FR-014)
+
+This lifecycle is specified for a later feature and is not implemented by
+`codex/005`.
+
+| Availability | Restore/join/phase behavior | Data behavior |
+|---|---|---|
+| Available | Normal phase and enrollment rules apply. | Activity and groups remain stored. |
+| Unavailable | Restore, group enrollment, and phase changes are rejected with a clear unavailable-activity response. | The activity and group records remain stored; group-name uniqueness remains reserved. |
 
 ## Activity Phase Lifecycle
 
