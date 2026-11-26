@@ -63,6 +63,12 @@ npm.cmd test
 npm.cmd run build
 ```
 
+## 教師登入帳號密碼
+
+預設帳號為`teacher`
+預設密碼為`0000`
+詳細資訊請參考`.env.example`，須設定至`.env`才可啟動服務
+
 ## 專案設計文件
 
 - 功能規格、規劃、任務及驗收步驟位於 [`specs/`](./specs/)。
