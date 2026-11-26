@@ -1,6 +1,6 @@
 # Feature Specification: 使用者角色與活動階段同步
 
-**Feature Branch**: `codex/005`
+**Feature Branch**: `codex/001-user-stage-sync`
 
 **Created**: 2026-11-18
 

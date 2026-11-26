@@ -22,7 +22,6 @@
 在 Windows PowerShell 開啟專案根目錄：
 
 ```powershell
-Set-Location "$env:USERPROFILE\Documents\quiz-buzzer2"
 npm.cmd ci
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
