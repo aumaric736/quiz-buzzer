@@ -1,6 +1,6 @@
 # Tasks: 全狀態返回角色選擇
 
-**Input**: Design documents in `/specs/005/`  
+**Input**: Design documents in `/specs/005-role-return/`  
 **Status note**: This is a retrospective checklist of work present on `codex/005`, plus the documentation completed in this pass. `[x]` means checked against the current implementation/tests or completed in this documentation pass. There is one explicit deferred item at the end.
 
 ## Phase 1: Session retirement and return flow
@@ -27,11 +27,11 @@
 
 **Purpose**: Document the actual branch behavior and preserve design traceability.
 
-- [x] T011 [US1] Document current behavior, boundaries, acceptance criteria, and deferred unavailable-activity recovery in `specs/005/spec.md`.
-- [x] T012 [US1] Record architecture, research decisions, session model, API/UI contracts, and local verification walkthrough in `specs/005/plan.md`, `research.md`, `data-model.md`, `contracts/`, and `quickstart.md`.
+- [x] T011 [US1] Document current behavior, boundaries, acceptance criteria, and deferred unavailable-activity recovery in `specs/005-role-return/spec.md`.
+- [x] T012 [US1] Record architecture, research decisions, session model, API/UI contracts, and local verification walkthrough in `specs/005-role-return/plan.md`, `research.md`, `data-model.md`, `contracts/`, and `quickstart.md`.
 - [x] T013 [US1] Add component, class, and sequence diagrams with rendered PNGs in `diagrams/005-role-return-*.puml` and `diagrams/005-role-return-*.png`.
-- [x] T014 [US1] Record specification quality review in `specs/005/checklists/requirements.md`.
-- [x] T015 [US1] Run cross-artifact converge/analyze and record validation results in `specs/005/implementation-report.md`.
+- [x] T014 [US1] Record specification quality review in `specs/005-role-return/checklists/requirements.md`.
+- [x] T015 [US1] Run cross-artifact converge/analyze and record validation results in `specs/005-role-return/implementation-report.md`.
 
 ## Deferred work
 

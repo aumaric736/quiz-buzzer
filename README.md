@@ -14,15 +14,15 @@
 
 ## 本機需求
 
-- Node.js `22.12` 或更新版本
-- npm
+- Node.js `22.12` 或更新版本（可能需額外安裝）
+- npm（通常隨node.js安裝）
 
 ## 安裝與啟動
 
 在 Windows PowerShell 開啟專案根目錄：
 
 ```powershell
-Set-Location "$env:USERPROFILE\Documents\quiz-buzzer2"
+cd "$env:USERPROFILE\Desktop\quiz-buzzer"
 npm.cmd ci
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
@@ -47,14 +47,14 @@ npm.cmd run dev --workspace=client
 
 ## Google Sheets 設定
 
-使用 Guided Notes 前，請在 Google Cloud 啟用 Google Sheets API、建立服務帳號與 JSON 金鑰，並只在本機 `.env` 設定：
+使用 Guided Notes 前，請在 Google Cloud （ https://console.cloud.google.com/ ）建立專案後啟用 Google Sheets API（ https://console.cloud.google.com/apis/library/sheets.googleapis.com ）、建立服務帳戶（ https://console.cloud.google.com/iam-admin/serviceaccounts 進入專案後依序建立，名稱隨意）與 JSON 金鑰（進入剛建立的服務帳戶，切換至金鑰頁面，選擇建立新的金鑰），並在本機 `.env` 設定：
 
 ```env
-GOOGLE_SERVICE_ACCOUNT_EMAIL=服務帳號的client_email
+GOOGLE_SERVICE_ACCOUNT_EMAIL=服務帳號JSON的client_email
 GOOGLE_PRIVATE_KEY="服務帳號JSON中的private_key"
 ```
 
-不要將 `.env`、服務帳號 JSON 或私鑰提交至 GitHub。把 Guided Notes 試算表分享給服務帳號：匯入至少需要檢視權限，寫回答案需要編輯權限。更新 `.env` 後請重啟後端。
+不要將 `.env`、服務帳號 JSON 或私鑰提交至 GitHub。開啟 Guided Notes 要使用的試算表分享給服務帳號（將上方 JSON 的 email 貼到共用欄位）：匯入至少需要檢視權限，寫回答案需要編輯權限。更新 `.env` 後請重啟後端。
 
 ## 測試與建置
 
