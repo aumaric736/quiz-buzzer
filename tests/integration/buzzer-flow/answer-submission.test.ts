@@ -46,7 +46,7 @@ describe('buzzer answer submission API', () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     const response = await submit(studentIds[0], { questionNumber: 1, answerParts: ['first', 'second'] });
     expect(response.status).toBe(201);
-    expect(await response.json()).toEqual({ accepted: true, questionNumber: 1 });
+    expect(await response.json()).toMatchObject({ accepted: true, questionNumber: 1, status: 'accepted' });
     expect(db.prepare('SELECT phase FROM activities WHERE id = ?').get(activityId)).toEqual({ phase: '搶答進行中' });
   });
 
@@ -56,7 +56,7 @@ describe('buzzer answer submission API', () => {
     expect(first.status).toBe(201);
     const later = await submit(studentIds[1], { questionNumber: 1, answerParts: ['later', 'answer'] });
     expect(later.status).toBe(201);
-    expect(await later.json()).toEqual({ accepted: true, questionNumber: 1 });
+    expect(await later.json()).toMatchObject({ accepted: true, questionNumber: 1, status: 'accepted' });
 
     expect(db.prepare(`SELECT group_id AS groupId, submission_rank AS submissionRank, is_winner AS isWinner
       FROM buzzer_submissions WHERE activity_id = ? AND question_number = ? ORDER BY submission_rank`).all(activityId, 1))
@@ -88,6 +88,8 @@ describe('buzzer answer submission API', () => {
   });
 
   it('serializes one hundred competing group submissions to one winner with stable per-question ranks', async () => {
+    activityId = createActivity(db, teacherId).activityId;
+    seedGuidedNotesQuestions(db, activityId, [1, 2], 2);
     const competitors = Array.from({ length: 100 }, (_, index) => {
       const sessionId = createSession(db, 'student').sessionId;
       enrollGroup(db, sessionId, activityId, `Competitor ${index + 1}`);

@@ -5,11 +5,13 @@ import { getBuzzerQuestions } from '../services/buzzer-flow-api.js';
 
 interface StudentAnswerViewProps {
   sessionId: string;
+  groupId: string;
   activity: ActivitySnapshot;
   submittedQuestionNumbers?: number[];
+  submittedAnswers?: Array<{ questionNumber: number; answerParts: string[] }>;
 }
 
-export function StudentAnswerView({ sessionId, activity, submittedQuestionNumbers = [] }: StudentAnswerViewProps) {
+export function StudentAnswerView({ sessionId, groupId, activity, submittedQuestionNumbers = [], submittedAnswers = [] }: StudentAnswerViewProps) {
   const [questions, setQuestions] = useState<Array<{ questionNumber: number; blankCount: number }> | null>(null);
   const [error, setError] = useState('');
 
@@ -28,6 +30,6 @@ export function StudentAnswerView({ sessionId, activity, submittedQuestionNumber
     {!questions && !error && <p role="status" className="text-sm text-slate-600">正在載入題目…</p>}
     {error && <p role="alert" className="text-sm text-red-800">{error}</p>}
     {questions?.length === 0 && <p className="text-sm text-slate-600">老師尚未匯入題目。</p>}
-    {questions?.map((question) => <AnswerQuestionForm key={question.questionNumber} sessionId={sessionId} activityId={activity.activityId} phase={activity.phase} question={question} alreadySubmitted={submittedQuestionNumbers.includes(question.questionNumber)} />)}
+    {questions?.map((question) => <AnswerQuestionForm key={question.questionNumber} sessionId={sessionId} activityId={activity.activityId} groupId={groupId} phase={activity.phase} question={question} alreadySubmitted={submittedQuestionNumbers.includes(question.questionNumber)} submittedAnswerParts={submittedAnswers.find((item) => item.questionNumber === question.questionNumber)?.answerParts} />)}
   </section>;
 }

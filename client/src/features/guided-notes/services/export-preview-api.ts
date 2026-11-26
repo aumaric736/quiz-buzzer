@@ -38,6 +38,10 @@ export function confirmExport(sessionId: string, activityId: string, previewId: 
   return request(sessionId, activityId, 'exports', { previewId });
 }
 
+export function retryExport(sessionId: string, activityId: string, exportId: string): Promise<GuidedNotesExportResult> {
+  return request(sessionId, activityId, `exports/${encodeURIComponent(exportId)}/retry`, {});
+}
+
 export async function getExportResult(sessionId: string, activityId: string, exportId: string): Promise<GuidedNotesExportResult> {
   let response: Response;
   try {

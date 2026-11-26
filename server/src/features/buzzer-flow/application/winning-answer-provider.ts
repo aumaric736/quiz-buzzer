@@ -63,7 +63,7 @@ export function loadEndedAnswerResults(db: SqliteDatabase, activityId: string): 
     results.push({
       questionNumber: row.questionNumber, winner: true,
       winningGroupId: row.groupId, winningGroupName: row.groupName,
-      answerParts: value.map((part) => (part as string).trim())
+      answerParts: value as string[]
     });
   }
   return results;

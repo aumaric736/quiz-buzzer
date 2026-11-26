@@ -5,6 +5,7 @@ import { createApp } from '../../../server/src/app.js';
 import { createActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
 import { transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
+import { createGroupWithInviteCode, formatInviteCode } from '../../../server/src/features/user-stage-sync/persistence/group-repository.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
 
@@ -77,4 +78,37 @@ describe('group enrollment API', () => {
     expect(responses.every((status) => status === 201)).toBe(true);
     expect(db.prepare('SELECT count(*) AS total FROM groups WHERE activity_id = ?').get(activityId)).toEqual({ total: 10 });
   });
+
+  it('returns a random six-digit invite code and caps the activity at 100 groups', async () => {
+    const first = await join(studentId, 'Random Team');
+    expect(first.status).toBe(201);
+    const firstGroup = await first.json() as { inviteCode: string };
+    expect(firstGroup.inviteCode).toMatch(/^\d{6}$/);
+    for (let index = 1; index < 100; index += 1) {
+      const student = createSession(db, 'student');
+      const response = await joinAs(student.sessionId, `Team ${index}`);
+      expect(response.status).toBe(201);
+    }
+    const last = createSession(db, 'student');
+    const response = await joinAs(last.sessionId, 'Team 101');
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: 'GROUP_LIMIT_REACHED' });
+    expect(db.prepare('SELECT count(*) AS total FROM groups WHERE activity_id = ?').get(activityId)).toEqual({ total: 100 });
+  });
+
+  it('preserves leading zeroes and retries an activity-scoped invite-code collision', () => {
+    const leaderA = createSession(db, 'student');
+    const first = createGroupWithInviteCode(db, activityId, 'Zero Team', leaderA.sessionId, () => 4207);
+    const values = [4207, 73];
+    const leaderB = createSession(db, 'student');
+    const second = createGroupWithInviteCode(db, activityId, 'Retry Team', leaderB.sessionId, () => values.shift()!);
+    expect(formatInviteCode(73)).toBe('000073');
+    expect(first.inviteCode).toBe('004207');
+    expect(second.inviteCode).toBe('000073');
+    expect(values).toHaveLength(0);
+  });
+
+  async function joinAs(sessionId: string, groupName: string) {
+    return fetch(`${baseUrl}/api/activities/${activityId}/groups`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Local-Session-Id': sessionId }, body: JSON.stringify({ mode: 'leader', groupName }) });
+  }
 });

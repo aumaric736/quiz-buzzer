@@ -1,44 +1,18 @@
-# 預設自動偵測文字檔，並在提交時統一轉為 LF 換行符號
+# Use LF for text files on every platform.
 * text=auto eol=lf
 
-# Windows 專屬執行檔保持 CRLF，避免無法執行
+# Preserve Windows batch script line endings.
 *.bat text eol=crlf
 *.cmd text eol=crlf
 
-# Default: use LF for all text files
-* text=auto eol=lf
-
-# Explicitly enforce LF for common source files
-*.md       text eol=lf
-*.txt      text eol=lf
-*.yml      text eol=lf
-*.yaml     text eol=lf
-*.json     text eol=lf
-*.xml      text eol=lf
-*.toml     text eol=lf
-*.puml     text eol=lf
-*.sh       text eol=lf
-*.py       text eol=lf
-*.js       text eol=lf
-*.ts       text eol=lf
-*.tsx      text eol=lf
-*.jsx      text eol=lf
-*.java     text eol=lf
-*.go       text eol=lf
-*.rs       text eol=lf
-*.css      text eol=lf
-*.html     text eol=lf
-*.sql      text eol=lf
-*.properties text eol=lf
-
-# Keep binary files unchanged
-*.png      binary
-*.jpg      binary
-*.jpeg     binary
-*.gif      binary
-*.ico      binary
-*.pdf      binary
-*.zip      binary
-*.jar      binary
-*.class    binary
-*.woff2    binary
+# Keep binary assets unchanged.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.jar binary
+*.class binary
+*.woff2 binary

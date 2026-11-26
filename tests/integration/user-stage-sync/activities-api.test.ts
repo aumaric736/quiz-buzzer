@@ -56,7 +56,7 @@ describe('activity API', () => {
     expect((await post('/api/activities', student.sessionId, {})).status).toBe(403);
   });
 
-  it('retires only the teacher session while leaving the activity phase and student session unchanged', async () => {
+  it('ends the activity when the teacher explicitly leaves while preserving student membership', async () => {
     const teacher = createSession(db, 'teacher');
     const student = createSession(db, 'student');
     const created = await post('/api/activities', teacher.sessionId, {});
@@ -72,13 +72,13 @@ describe('activity API', () => {
     expect(reset.status).toBe(200);
     expect(await reset.json()).toMatchObject({ status: 'retired', activityId: null, groupId: null });
     expect(db.prepare('SELECT role, activity_id, group_id, retired_at FROM user_sessions WHERE id = ?').get(student.sessionId)).toEqual(studentBefore);
-    expect(db.prepare('SELECT phase, revision, updated_at FROM activities WHERE id = ?').get(activity.activityId)).toEqual(activityBefore);
+    expect(db.prepare('SELECT phase, revision FROM activities WHERE id = ?').get(activity.activityId)).toEqual({ phase: '已結束', revision: 2 });
     expect(db.prepare('SELECT activity_id, group_id, retired_at FROM user_sessions WHERE id = ?').get(teacher.sessionId))
       .toMatchObject({ activity_id: null, group_id: null, retired_at: expect.any(String) });
 
     const studentSnapshot = await fetch(`${baseUrl}/api/activities/${activity.activityId}`, { headers: { 'X-Local-Session-Id': student.sessionId } });
     expect(studentSnapshot.status).toBe(200);
-    expect(await studentSnapshot.json()).toMatchObject({ phase: '搶答進行中', revision: 1 });
+    expect(await studentSnapshot.json()).toMatchObject({ phase: '已結束', revision: 2 });
     const retiredTeacherOperation = await post(`/api/activities/${activity.activityId}/phase`, teacher.sessionId, { phase: '已結束' });
     expect(retiredTeacherOperation.status).toBe(404);
     expect(await retiredTeacherOperation.json()).toMatchObject({ code: 'SESSION_NOT_FOUND' });

@@ -1,14 +1,38 @@
 @startuml
+title 小組活動與逐題搶答 - 元件圖
 left to right direction
-actor 學生
-rectangle "小組功能" {
-  component "學生加入流程" as Flow
-  component "小組服務" as Service
-  component "活動小組資料" as Store
-}
-學生 --> Flow
-Flow --> Service : 建組 / 輸入邀請碼
-Service --> Store : 驗證活動、名額、成員
-Store --> Service : 小組與成員狀態
-Service --> Flow : 結果與邀請碼
+actor Teacher
+actor Student
+component "React + Vite Client" as Client
+component "Express API / Final Results" as API
+component "Teacher Auth / Activity Lifecycle" as Activity
+component "Group / Session Service" as Membership
+component "Buzzer Flow" as Buzzer
+component "Guided Notes Export" as Export
+component "WebSocket Presence" as Presence
+component "Per-Activity Receipt Queue" as Queue
+database "SQLite" as DB
+cloud "Google Sheets" as Sheets
+component "Server Environment" as Env
+
+Teacher --> Client
+Student --> Client
+Client --> API : HTTP / JSON
+Client --> Presence : WebSocket
+API --> Activity
+API --> Membership
+API --> Buzzer
+API --> Export
+Presence --> Membership : student session deadline
+Presence --> Activity : teacher deadline
+Activity --> DB
+Membership --> DB : invite code / two seats
+Buzzer --> Queue : answer receipts
+Activity --> Queue : end / timeout receipts
+Queue --> DB : ordered operation receipt
+Buzzer --> DB : one original answer per group/question
+Export --> DB : durable attempts
+Activity --> Env : configured credentials
+API --> Env : teacher username/password and LAN settings
+Export --> Sheets : server credential
 @enduml

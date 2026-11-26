@@ -2,7 +2,7 @@ import type { GuidedNotesExportResult as Result } from '@quiz-buzzer/shared';
 
 interface GuidedNotesExportResultProps { result: Result }
 
-export function GuidedNotesExportResult({ result }: GuidedNotesExportResultProps) {
+export function GuidedNotesExportResult({ result, onRetry, retrying = false }: GuidedNotesExportResultProps & { onRetry?: () => void; retrying?: boolean }) {
   const statusLabel = result.status === 'completed' ? '匯出結果已確認'
     : result.status === 'unknown' ? '寫回結果尚未確認'
       : result.status === 'failed' ? '部分或全部題目未寫回'
@@ -16,5 +16,6 @@ export function GuidedNotesExportResult({ result }: GuidedNotesExportResultProps
       <li>略過或失敗：{result.failedQuestionNumbers.length ? result.failedQuestionNumbers.join('、') : '無'}</li>
     </ul>
     <p className="mt-3 break-all font-mono text-xs">匯出編號：{result.exportId}</p>
+    {onRetry && ['unknown', 'failed', 'pending'].includes(result.status) && <button type="button" disabled={retrying} onClick={onRetry} className="mt-4 rounded-xl bg-indigo-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{retrying ? '重新檢查並寫回中…' : '重新檢查講義並安全重試'}</button>}
   </section>;
 }

@@ -18,6 +18,7 @@ export function QuestionResultList({ items }: QuestionResultListProps) {
           <p className="font-semibold">第 {item.questionNumber} 題</p>
           {won ? <><p className="mt-1 text-sm">成功組別：{groupName}</p><p className="mt-1 text-sm text-slate-700">答案：{answerParts.join(' / ')}</p></>
             : <p className="mt-1 text-sm text-slate-600">{ended ? '無勝出組別' : '等待作答'}</p>}
+          {!ended && item.status === 'won' && item.submissions.length > 1 && <ul className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm text-slate-600">{item.submissions.map((submission) => <li key={submission.groupId}>第 {submission.submissionRank} 順位：{submission.groupName} — {submission.answerParts.join(' / ')}{submission.isWinner ? '（勝出）' : ''}</li>)}</ul>}
         </li>;
       })}
     </ol>

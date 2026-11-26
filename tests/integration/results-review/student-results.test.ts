@@ -53,7 +53,7 @@ describe('student final results', () => {
     expect(answer.status).toBe(201);
 
     expect(await (await readStatus(studentAId)).json()).toEqual({
-      phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted' }]
+      phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted', answerParts: ['first', 'second'] }]
     });
     expect(await (await readStatus(studentBId)).json()).toEqual({ phase: '搶答進行中', items: [] });
 

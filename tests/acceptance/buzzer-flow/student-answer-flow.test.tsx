@@ -43,7 +43,7 @@ describe('student answer flow acceptance', () => {
 
     transitionActivity(db, teacherId, activityId, '搶答進行中');
     expect(await submitBuzzerAnswer(studentId, activityId, { questionNumber: 2, answerParts: ['first', 'second'] }, baseUrl))
-      .toEqual({ accepted: true, questionNumber: 2 });
+      .toMatchObject({ accepted: true, questionNumber: 2, status: 'accepted' });
     await expect(submitBuzzerAnswer(studentId, activityId, { questionNumber: 2, answerParts: ['retry', 'retry'] }, baseUrl))
       .rejects.toThrow('第一次受理的答案不會被覆寫');
   });

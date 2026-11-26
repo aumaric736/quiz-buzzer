@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { GuidedNotesExportPreview as Preview, GuidedNotesExportResult as Result, UserSession } from '@quiz-buzzer/shared';
-import { createExportPreview, getExportResult, GuidedNotesExportApiError } from '../services/export-preview-api.js';
+import { createExportPreview, getExportResult, GuidedNotesExportApiError, retryExport } from '../services/export-preview-api.js';
 import { buildExportPreviewActionRequest, toExportPreviewViewModels } from './export-preview-view-model.js';
 import { GuidedNotesExportResult } from './GuidedNotesExportResult.js';
 
@@ -15,6 +15,14 @@ export function GuidedNotesExportPreview({ session, activityId, onConfirm }: Gui
   const [result, setResult] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  async function retryPrevious() {
+    if (!result) return;
+    setBusy(true); setError('');
+    try { setResult(await retryExport(session.sessionId, activityId, result.exportId)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : '安全重試失敗，請先檢查原講義。'); }
+    finally { setBusy(false); }
+  }
 
   async function loadPreview() {
     setError(''); setPreview(null); setResult(null); setBusy(true);
@@ -66,6 +74,6 @@ export function GuidedNotesExportPreview({ session, activityId, onConfirm }: Gui
       </div>
     </>}
     {error && <p role="alert" className="mt-5 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
-    {result && <GuidedNotesExportResult result={result} />}
+    {result && <GuidedNotesExportResult result={result} onRetry={() => void retryPrevious()} retrying={busy} />}
   </section>;
 }

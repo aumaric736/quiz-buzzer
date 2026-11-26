@@ -78,3 +78,8 @@ export interface GuidedNotesExportResult {
 }
 
 export interface GuidedNotesExportAttemptResponse extends GuidedNotesExportResult {}
+
+export interface GuidedNotesExportRetryResponse extends GuidedNotesExportAttemptResponse {
+  retryable: boolean;
+  updatedAt: string;
+}

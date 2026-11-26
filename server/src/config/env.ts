@@ -1,18 +1,34 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
+import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
 export interface AppConfig {
-  host: '127.0.0.1';
+  host: string;
   port: number;
   clientOrigin: string;
   databasePath: string;
+  teacherUsername: string;
+  teacherPassword: string;
 }
 
 export interface GoogleSheetsCredentials {
   serviceAccountEmail: string;
   privateKey: string;
+}
+
+function isTrustedLanHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.local')) return true;
+  if (isIP(host) === 4) {
+    const octets = host.split('.').map(Number);
+    return octets[0] === 10 || octets[0] === 192 && octets[1] === 168
+      || octets[0] === 172 && octets[1]! >= 16 && octets[1]! <= 31
+      || octets[0] === 169 && octets[1] === 254;
+  }
+  if (isIP(host) === 6) return host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:');
+  return false;
 }
 
 /**
@@ -38,8 +54,10 @@ export function loadGoogleSheetsCredentials(env: NodeJS.ProcessEnv = process.env
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const host = env.HOST;
-  if (host !== '127.0.0.1') throw new Error('HOST must be 127.0.0.1 for local-only access.');
+  const host = env.HOST?.trim();
+  if (!host || !(host === '0.0.0.0' || isTrustedLanHostname(host))) {
+    throw new Error('HOST must be loopback or a trusted classroom LAN address.');
+  }
 
   const port = Number(env.PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -49,14 +67,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const clientOrigin = env.CLIENT_ORIGIN;
   if (!clientOrigin) throw new Error('CLIENT_ORIGIN is required.');
   let originUrl: URL;
-  try { originUrl = new URL(clientOrigin); } catch { throw new Error('CLIENT_ORIGIN must be a valid local HTTP origin.'); }
-  if (originUrl.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(originUrl.hostname) || originUrl.origin !== clientOrigin) {
-    throw new Error('CLIENT_ORIGIN must be an HTTP origin on localhost or 127.0.0.1.');
+  try { originUrl = new URL(clientOrigin); } catch { throw new Error('CLIENT_ORIGIN must be a valid HTTP origin.'); }
+  if (originUrl.protocol !== 'http:' || originUrl.origin !== clientOrigin || originUrl.username || originUrl.password || !isTrustedLanHostname(originUrl.hostname)) {
+    throw new Error('CLIENT_ORIGIN must be a trusted classroom LAN HTTP origin without credentials, path, or query.');
+  }
+
+  const teacherUsername = env.TEACHER_USERNAME?.trim() ?? '';
+  const teacherPassword = env.TEACHER_PASSWORD ?? '';
+  if (!teacherUsername || !teacherPassword || teacherUsername.length > 100 || teacherPassword.length > 200) {
+    throw new Error('TEACHER_USERNAME and TEACHER_PASSWORD must be configured with valid lengths.');
   }
 
   const databasePathValue = env.DATABASE_PATH?.trim();
   if (!databasePathValue || databasePathValue.includes('\0')) throw new Error('DATABASE_PATH must be a non-empty local path.');
   const databasePath = databasePathValue === ':memory:' || isAbsolute(databasePathValue)
     ? databasePathValue : resolve(repositoryRoot, databasePathValue);
-  return { host, port, clientOrigin, databasePath };
+  return { host, port, clientOrigin, databasePath, teacherUsername, teacherPassword };
 }
