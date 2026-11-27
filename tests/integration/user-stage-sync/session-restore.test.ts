@@ -9,6 +9,7 @@ import type { SqliteDatabase } from '../../../server/src/features/user-stage-syn
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
 import { restoreApplicationSession } from '../../../client/src/features/user-stage-sync/services/session-restore.js';
 import { markStudentDisconnected, reconcileExpiredStudentSessions, restoreStudentPresence } from '../../../server/src/features/user-stage-sync/application/student-session-presence-service.js';
+import { listGroupRoster } from '../../../server/src/features/user-stage-sync/persistence/group-repository.js';
 
 describe('session and activity restoration', () => {
   let db: SqliteDatabase;
@@ -55,11 +56,20 @@ describe('session and activity restoration', () => {
     const team = enrollGroup(db, leaderId, prepActivityId, { mode: 'leader', groupName: 'Retention Team' });
     const memberId = createSession(db, 'student').sessionId;
     enrollGroup(db, memberId, prepActivityId, { mode: 'member', inviteCode: team.inviteCode });
-    const disconnectedAt = new Date('2026-11-26T01:00:00.000Z');
+    const disconnectedAt = new Date(Date.now() + 60 * 60 * 1000);
+    const revisions = (table: 'activities' | 'groups', id: string) => db.prepare(`SELECT live_revision AS revision FROM ${table} WHERE id = ?`).get(id);
     markStudentDisconnected(db, memberId, disconnectedAt);
+    expect(listGroupRoster(db, prepActivityId)[0]).toMatchObject({ onlineCount: 1, occupiedCount: 2 });
+    expect(revisions('groups', team.groupId)).toEqual({ revision: 3 });
+    expect(revisions('activities', prepActivityId)).toEqual({ revision: 3 });
+    expect(restoreStudentPresence(db, memberId, new Date(disconnectedAt.getTime() + 119_999))).toBe(true);
+    expect(revisions('groups', team.groupId)).toEqual({ revision: 4 });
     expect(restoreStudentPresence(db, memberId, new Date(disconnectedAt.getTime() + 119_999))).toBe(true);
     markStudentDisconnected(db, memberId, disconnectedAt);
     expect(reconcileExpiredStudentSessions(db, new Date(disconnectedAt.getTime() + 120_000))).toBe(1);
+    expect(restoreStudentPresence(db, memberId, new Date(disconnectedAt.getTime() + 120_000))).toBe(false);
+    expect(revisions('groups', team.groupId)).toEqual({ revision: 6 });
+    expect(revisions('activities', prepActivityId)).toEqual({ revision: 6 });
     const replacement = createSession(db, 'student');
     expect(enrollGroup(db, replacement.sessionId, prepActivityId, { mode: 'member', inviteCode: team.inviteCode })).toMatchObject({ groupId: team.groupId });
     expect(db.prepare('SELECT group_id AS groupId FROM user_sessions WHERE id = ?').get(memberId)).toEqual({ groupId: null });

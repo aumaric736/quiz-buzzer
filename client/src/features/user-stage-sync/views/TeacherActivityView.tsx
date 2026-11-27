@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ActivityPhase, ActivitySnapshot, AnswerStatusResponse, BuzzerQuestionUpdatedEvent, TeacherQuestionStatus, TeacherReviewRecordsResponse, UserSession, WinningAnswerResult } from '@quiz-buzzer/shared';
+import type { ActivityPhase, ActivitySnapshot, AnswerStatusResponse, BuzzerQuestionUpdatedEvent, LiveGroupRosterRecord, TeacherQuestionStatus, TeacherReviewRecordsResponse, UserSession, WinningAnswerResult } from '@quiz-buzzer/shared';
 import { changeActivityPhase, createActivity } from '../services/activity-api.js';
 import { ActivityPhaseStatus } from '../components/ActivityPhaseStatus.js';
 import { GuidedNotesImportView } from '../../guided-notes/views/GuidedNotesImportView.js';
@@ -12,6 +12,7 @@ import { TeacherActivityHistory } from '../../results-review/components/TeacherA
 import { TeacherSubmissionReview } from '../../results-review/components/TeacherSubmissionReview.js';
 import { ActivityJoinCode } from '../components/ActivityJoinCode.js';
 import { TeacherGroupRoster } from '../components/TeacherGroupRoster.js';
+import { applyTeacherLiveEvent } from '../services/live-activity-state.js';
 
 interface TeacherActivityViewProps { session: UserSession; initialActivity?: ActivitySnapshot | null }
 
@@ -22,6 +23,7 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [answerItems, setAnswerItems] = useState<Array<TeacherQuestionStatus | WinningAnswerResult>>([]);
+  const [liveGroups, setLiveGroups] = useState<LiveGroupRosterRecord[] | null>(null);
   const [selectedReviewActivityId, setSelectedReviewActivityId] = useState<string | null>(null);
   const [review, setReview] = useState<TeacherReviewRecordsResponse | null>(null);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
@@ -40,6 +42,13 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
   useEffect(() => { void refreshAnswerStatus(); }, [refreshAnswerStatus]);
 
   function handleBuzzerUpdate(_event: BuzzerQuestionUpdatedEvent) { void refreshAnswerStatus(); }
+  function handleLiveEvent(event: Exclude<import('../services/activity-socket.js').ActivitySocketEvent, ActivitySnapshot | BuzzerQuestionUpdatedEvent>) {
+    if (event.type === 'activity.roster.updated' && event.activityId === activity?.activityId) {
+      setLiveGroups((current) => applyTeacherLiveEvent(current, event));
+    } else if (event.type === 'activity.team-answer.updated' && event.activityId === activity?.activityId) {
+      setLiveGroups((current) => applyTeacherLiveEvent(current, event));
+    }
+  }
 
   async function openReview(activityId: string) {
     setSelectedReviewActivityId(activityId);
@@ -58,6 +67,7 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
       const created = await createActivity(session.sessionId);
       setActivity(created);
       setAnswerItems([]);
+      setLiveGroups(null);
       setSelectedReviewActivityId(null);
       setReview(null);
       setHistoryRefreshToken((value) => value + 1);
@@ -80,9 +90,9 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
     </div>
     {!activity ? <div className="mt-8"><p className="text-slate-600">建立活動後，學生即可在準備階段加入組別。</p><button className="mt-4 rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50" disabled={busy} onClick={() => void createNewActivity()}>{busy ? '建立中…' : '建立活動'}</button></div> : <div className="mt-8">
       <ActivityJoinCode code={activity.activityId} />
-      <TeacherGroupRoster sessionId={session.sessionId} activityId={activity.activityId} />
-      <div className="mt-5 rounded-2xl bg-indigo-50 p-6"><p className="text-sm text-indigo-800">目前階段</p><p aria-live="polite" className="mt-1 text-3xl font-bold text-indigo-950">{activity.phase}</p><p className="mt-2 text-sm text-indigo-700">版本 {activity.revision}</p></div>
-      <ActivityPhaseStatus sessionId={session.sessionId} activity={activity} onUpdate={setActivity} onReconnect={() => void refreshAnswerStatus()} onBuzzerUpdate={handleBuzzerUpdate} />
+      <TeacherGroupRoster sessionId={session.sessionId} activityId={activity.activityId} liveGroups={liveGroups} />
+      <div className="mt-5 rounded-2xl bg-indigo-50 p-6"><p className="text-sm text-indigo-800">目前階段</p><p aria-live="polite" className="mt-1 text-3xl font-bold text-indigo-950">{activity.phase}</p></div>
+      <ActivityPhaseStatus sessionId={session.sessionId} activity={activity} onUpdate={setActivity} onReconnect={() => void refreshAnswerStatus()} onBuzzerUpdate={handleBuzzerUpdate} onLiveEvent={handleLiveEvent} />
       <p className="mt-3 text-sm text-slate-600">搶答不設倒數，會持續進行直到老師手動結束。</p>
       {nextPhase[activity.phase] && <button className="mt-5 rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50" disabled={busy} onClick={() => void run(() => changeActivityPhase(session.sessionId, activity.activityId, nextPhase[activity.phase]!))}>{busy ? '更新中…' : activity.phase === '準備中' ? '開始搶答' : '結束活動'}</button>}
       <GuidedNotesImportView session={session} activityId={activity.activityId} />

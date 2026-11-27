@@ -3,6 +3,7 @@ import type { SqliteDatabase } from '../persistence/database.js';
 import { enrollGroup } from '../application/group-service.js';
 import { getTeacherGroupRoster } from '../application/group-roster-service.js';
 import { HttpError, isRecord, requireNonEmptyString } from '../../../api/validation.js';
+import type { ActivityLivePublishers } from '../realtime/websocket-server.js';
 
 function sessionIdFrom(request: Request): string {
   const sessionId = request.header('X-Local-Session-Id');
@@ -10,13 +11,16 @@ function sessionIdFrom(request: Request): string {
   return sessionId;
 }
 
-export function groupRoutes(db: SqliteDatabase): Router {
+export function groupRoutes(db: SqliteDatabase, livePublishers?: Pick<ActivityLivePublishers, 'publishTeamPresence' | 'publishRoster'>): Router {
   const router = Router();
   router.post('/api/activities/:activityId/groups', (request, response, next) => {
     try {
       if (!isRecord(request.body) || Object.keys(request.body).some((key) => !['mode', 'groupName', 'inviteCode'].includes(key))) throw new HttpError(400, 'INVALID_ENROLLMENT', '加入組別資料格式不正確。');
       const activityId = requireNonEmptyString(request.params.activityId, 'activityId', 100);
-      response.status(201).json(enrollGroup(db, sessionIdFrom(request), activityId, request.body));
+      const group = enrollGroup(db, sessionIdFrom(request), activityId, request.body);
+      livePublishers?.publishTeamPresence(activityId, group.groupId);
+      livePublishers?.publishRoster(activityId);
+      response.status(201).json(group);
     } catch (error) { next(error); }
   });
   router.get('/api/activities/:activityId/groups', (request, response, next) => {

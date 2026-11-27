@@ -6,6 +6,7 @@ export interface ExportPreviewViewModel {
   winningGroupName?: string;
   answerParts: string[];
   targetLabels: string[];
+  occupiedTargetLabels: string[];
 }
 
 export type ExportPreviewAction = 'confirm' | 'cancel';
@@ -18,10 +19,15 @@ export function toExportPreviewViewModels(items: GuidedNotesExportPreviewItem[])
         : '答案片段數量不符，略過此題',
     winningGroupName: item.winningGroupName,
     answerParts: item.answerParts ?? [],
-    targetLabels: item.targetLabels
+    targetLabels: item.targetLabels,
+    occupiedTargetLabels: item.occupiedTargetLabels ?? []
   }));
 }
 
 export function buildExportPreviewActionRequest(action: ExportPreviewAction, previewId: string): { previewId: string } | null {
   return action === 'confirm' ? { previewId } : null;
+}
+
+export function canRegenerateExportPreview(errorCode: string): boolean {
+  return ['PREVIEW_EXPIRED', 'TARGET_CELLS_OCCUPIED', 'TARGET_NO_LONGER_BLANK'].includes(errorCode);
 }

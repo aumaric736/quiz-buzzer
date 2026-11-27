@@ -2,6 +2,24 @@ import type { SqliteDatabase } from '../persistence/database.js';
 
 const RETENTION_MS = 2 * 60 * 1000;
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
+let presencePublisher: ((activityId: string, groupId: string) => void) | undefined;
+let rosterPublisher: ((activityId: string) => void) | undefined;
+
+export function configureStudentPresencePublisher(publish: (activityId: string, groupId: string) => void, publishRoster?: (activityId: string) => void): () => void {
+  presencePublisher = publish; rosterPublisher = publishRoster;
+  return () => { if (presencePublisher === publish) { presencePublisher = undefined; rosterPublisher = undefined; } };
+}
+
+function publishPresenceChange(db: SqliteDatabase, groupId: string | null): void {
+  if (!groupId || db.inTransaction) return;
+  const row = db.prepare('SELECT activity_id AS activityId FROM groups WHERE id = ?').get(groupId) as { activityId: string } | undefined;
+  if (row) { presencePublisher?.(row.activityId, groupId); rosterPublisher?.(row.activityId); }
+}
+
+function incrementLiveRevisions(db: SqliteDatabase, groupId: string): void {
+  db.prepare('UPDATE groups SET live_revision = live_revision + 1 WHERE id = ?').run(groupId);
+  db.prepare('UPDATE activities SET live_revision = live_revision + 1 WHERE id = (SELECT activity_id FROM groups WHERE id = ?)').run(groupId);
+}
 
 function scheduleExpiry(db: SqliteDatabase, sessionId: string, until: string): void {
   const previous = timers.get(sessionId);
@@ -17,34 +35,59 @@ function scheduleExpiry(db: SqliteDatabase, sessionId: string, until: string): v
 
 export function markStudentDisconnected(db: SqliteDatabase, sessionId: string, now = new Date()): void {
   const until = new Date(now.getTime() + RETENTION_MS).toISOString();
-  db.prepare("UPDATE user_sessions SET disconnected_until = ?, updated_at = ? WHERE id = ? AND role = 'student' AND retired_at IS NULL")
-    .run(until, now.toISOString(), sessionId);
+  const disconnect = db.transaction(() => {
+    const row = db.prepare("SELECT group_id AS groupId, disconnected_until AS disconnectedUntil FROM user_sessions WHERE id = ? AND role = 'student' AND retired_at IS NULL").get(sessionId) as
+      { groupId: string | null; disconnectedUntil: string | null } | undefined;
+    if (!row || row.disconnectedUntil || !row.groupId) return null;
+    db.prepare("UPDATE user_sessions SET disconnected_until = ?, updated_at = ? WHERE id = ? AND role = 'student' AND retired_at IS NULL")
+      .run(until, now.toISOString(), sessionId);
+    incrementLiveRevisions(db, row.groupId);
+    return row.groupId;
+  });
+  const groupId = disconnect.immediate();
+  if (!groupId) return;
   scheduleExpiry(db, sessionId, until);
+  publishPresenceChange(db, groupId);
 }
 
 export function restoreStudentPresence(db: SqliteDatabase, sessionId: string, now = new Date()): boolean {
-  const row = db.prepare('SELECT disconnected_until, retired_at FROM user_sessions WHERE id = ?').get(sessionId) as { disconnected_until: string | null; retired_at: string | null } | undefined;
-  if (!row || row.retired_at) return false;
-  if (row.disconnected_until && Date.parse(row.disconnected_until) <= now.getTime()) {
-    const timer = timers.get(sessionId); if (timer) clearTimeout(timer); timers.delete(sessionId);
-    expireStudentSession(db, sessionId, now);
-    return false;
-  }
-  db.prepare('UPDATE user_sessions SET disconnected_until = NULL, updated_at = ? WHERE id = ? AND role = \'student\' AND retired_at IS NULL')
-    .run(now.toISOString(), sessionId);
+  const restore = db.transaction(() => {
+    const row = db.prepare("SELECT disconnected_until AS disconnectedUntil, retired_at AS retiredAt, group_id AS groupId, group_role AS groupRole FROM user_sessions WHERE id = ? AND role = 'student'").get(sessionId) as
+      { disconnectedUntil: string | null; retiredAt: string | null; groupId: string | null; groupRole: string | null } | undefined;
+    if (!row || row.retiredAt) return { valid: false, changedGroupId: null as string | null };
+    if (!row.disconnectedUntil) return { valid: true, changedGroupId: null as string | null };
+    if (Date.parse(row.disconnectedUntil) <= now.getTime()) {
+      if (row.groupId) {
+        if (row.groupRole === 'leader') db.prepare('UPDATE groups SET accepts_members = 0 WHERE id = ?').run(row.groupId);
+        db.prepare('UPDATE user_sessions SET activity_id = NULL, group_id = NULL, disconnected_until = NULL, retired_at = ?, updated_at = ? WHERE id = ?')
+          .run(now.toISOString(), now.toISOString(), sessionId);
+        incrementLiveRevisions(db, row.groupId);
+      }
+      return { valid: false, changedGroupId: row.groupId };
+    }
+    db.prepare("UPDATE user_sessions SET disconnected_until = NULL, updated_at = ? WHERE id = ? AND role = 'student' AND retired_at IS NULL")
+      .run(now.toISOString(), sessionId);
+    if (row.groupId) incrementLiveRevisions(db, row.groupId);
+    return { valid: true, changedGroupId: row.groupId };
+  });
+  const outcome = restore.immediate();
   const timer = timers.get(sessionId); if (timer) clearTimeout(timer); timers.delete(sessionId);
-  return true;
+  publishPresenceChange(db, outcome.changedGroupId);
+  return outcome.valid;
 }
 
 export function expireStudentSession(db: SqliteDatabase, sessionId: string, now = new Date()): void {
   const expire = db.transaction(() => {
-    const row = db.prepare("SELECT group_id, group_role FROM user_sessions WHERE id = ? AND role = 'student' AND retired_at IS NULL").get(sessionId) as { group_id: string | null; group_role: string | null } | undefined;
-    if (!row) return;
-    if (row.group_id && row.group_role === 'leader') db.prepare('UPDATE groups SET accepts_members = 0 WHERE id = ?').run(row.group_id);
+    const row = db.prepare("SELECT group_id AS groupId, group_role AS groupRole, disconnected_until AS disconnectedUntil FROM user_sessions WHERE id = ? AND role = 'student' AND retired_at IS NULL").get(sessionId) as { groupId: string | null; groupRole: string | null; disconnectedUntil: string | null } | undefined;
+    if (!row || !row.groupId || !row.disconnectedUntil || Date.parse(row.disconnectedUntil) > now.getTime()) return null;
+    if (row.groupRole === 'leader') db.prepare('UPDATE groups SET accepts_members = 0 WHERE id = ?').run(row.groupId);
     db.prepare('UPDATE user_sessions SET activity_id = NULL, group_id = NULL, disconnected_until = NULL, retired_at = ?, updated_at = ? WHERE id = ?')
       .run(now.toISOString(), now.toISOString(), sessionId);
+    incrementLiveRevisions(db, row.groupId);
+    return row.groupId;
   });
-  expire.immediate();
+  const groupId = expire.immediate();
+  publishPresenceChange(db, groupId);
   const timer = timers.get(sessionId); if (timer) clearTimeout(timer); timers.delete(sessionId);
 }
 

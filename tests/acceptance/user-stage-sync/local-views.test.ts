@@ -112,8 +112,10 @@ describe('local view reconnection acceptance', () => {
     const initialSync = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('initial sync timeout')), 1500);
       subscription = connectActivitySocket(studentId, activityId, -1, (event: ActivitySocketEvent) => {
-        latestRevision = event.revision; latestPhase = event.phase;
-        if (event.type === 'activity.subscribed' && event.revision === 0) { clearTimeout(timer); resolve(); }
+        if (event.type === 'activity.subscribed' || event.type === 'activity.phase.updated') {
+          latestRevision = event.revision; latestPhase = event.phase;
+          if (event.type === 'activity.subscribed' && event.revision === 0) { clearTimeout(timer); resolve(); }
+        }
       }, () => undefined, async (): Promise<ActivitySnapshot> => {
         const response = await fetch(`http://127.0.0.1:${address.port}/api/activities/${activityId}`, { headers: { 'X-Local-Session-Id': studentId } });
         return response.json() as Promise<ActivitySnapshot>;

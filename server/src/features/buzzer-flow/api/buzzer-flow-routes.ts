@@ -26,7 +26,11 @@ function requireActivityAccess(db: SqliteDatabase, sessionId: string, activityId
   throw new HttpError(403, 'ACTIVITY_MEMBERSHIP_REQUIRED', '只有此活動的老師或已加入組別的學生可以查看題目。');
 }
 
-export function buzzerFlowRoutes(db: SqliteDatabase, publishBuzzerQuestion: (event: BuzzerQuestionUpdatedEvent) => void = () => undefined): Router {
+export function buzzerFlowRoutes(
+  db: SqliteDatabase,
+  publishBuzzerQuestion: (event: BuzzerQuestionUpdatedEvent) => void = () => undefined,
+  publishTeamAnswer: (activityId: string, groupId: string, questionNumber: number) => void = () => undefined
+): Router {
   const router = Router();
   router.get('/api/activities/:activityId/questions', (request, response, next) => {
     try {
@@ -54,9 +58,12 @@ export function buzzerFlowRoutes(db: SqliteDatabase, publishBuzzerQuestion: (eve
         const receiptSequence = recordActivityOperation(db, activityId, 'answer');
         return submitAnswer(db, sessionId, activityId, request.body, receiptSequence);
       });
-      if (!result.isReplay) publishBuzzerQuestion({ type: 'buzzer.question.updated', activityId, questionNumber: result.questionNumber,
-        status: result.isWinner ? 'won' : 'submitted', groupId: result.groupId, groupName: result.groupName,
-        answerParts: result.answerParts, submissionRank: result.submissionRank, isWinner: result.isWinner });
+      if (!result.isReplay) {
+        publishBuzzerQuestion({ type: 'buzzer.question.updated', activityId, questionNumber: result.questionNumber,
+          status: result.isWinner ? 'won' : 'submitted', groupId: result.groupId, groupName: result.groupName,
+          answerParts: result.answerParts, submissionRank: result.submissionRank, isWinner: result.isWinner });
+        publishTeamAnswer(activityId, result.groupId, result.questionNumber);
+      }
       response.status(result.isReplay ? 200 : 201).json({ accepted: true, questionNumber: result.questionNumber,
         status: result.isReplay ? 'already_submitted' : 'accepted', answerParts: result.answerParts });
     } catch (error) { next(error); }

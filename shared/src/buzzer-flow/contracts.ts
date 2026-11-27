@@ -82,4 +82,31 @@ export interface BuzzerQuestionUpdatedEvent {
   isWinner?: boolean;
 }
 
+export interface TeamQuestionAnswerSnapshot {
+  questionNumber: number;
+  status: 'unanswered' | 'submitted';
+  answerParts?: string[];
+}
+
+export interface TeamAnswerUpdatedEvent {
+  type: 'team.answer.updated';
+  activityId: string;
+  groupId: string;
+  groupLiveRevision: number;
+  questionNumber: number;
+  status: 'submitted';
+  answerParts: string[];
+}
+
+export interface ActivityTeamAnswerUpdatedEvent {
+  type: 'activity.team-answer.updated';
+  activityId: string;
+  activityLiveRevision: number;
+  groupId: string;
+  groupName: string;
+  questionNumber: number;
+  status: 'submitted';
+  answerParts: string[];
+}
+
 export type BuzzerActivityPhase = ActivityPhase;

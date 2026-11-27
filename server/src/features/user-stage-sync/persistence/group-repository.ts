@@ -36,7 +36,13 @@ export function findGroupByInviteCode(db: SqliteDatabase, activityId: string, in
 }
 
 export function listGroupRoster(db: SqliteDatabase, activityId: string) {
-  return db.prepare(`SELECT g.id AS groupId, g.invite_code AS inviteCode,
-      (SELECT count(*) FROM user_sessions s WHERE s.group_id = g.id AND s.role = 'student' AND s.retired_at IS NULL) AS activeSessionCount
-    FROM groups g WHERE g.activity_id = ? ORDER BY g.joined_at, g.id`).all(activityId) as Array<{ groupId: string; inviteCode: string; activeSessionCount: number }>;
+  const rows = db.prepare(`SELECT g.id AS groupId, g.invite_code AS inviteCode, g.accepts_members AS acceptsMembers,
+      (SELECT count(*) FROM user_sessions s WHERE s.group_id = g.id AND s.role = 'student' AND s.retired_at IS NULL) AS occupiedCount,
+      (SELECT count(*) FROM user_sessions s WHERE s.group_id = g.id AND s.role = 'student'
+        AND s.retired_at IS NULL AND s.disconnected_until IS NULL) AS onlineCount
+    FROM groups g WHERE g.activity_id = ? ORDER BY g.joined_at, g.id`).all(activityId) as Array<{
+      groupId: string; inviteCode: string; acceptsMembers: number; occupiedCount: number; onlineCount: number
+    }>;
+  return rows.map((row) => ({ groupId: row.groupId, inviteCode: row.inviteCode, activeSessionCount: row.occupiedCount,
+    onlineCount: row.onlineCount, occupiedCount: row.occupiedCount, capacity: 2 as const, acceptsMembers: row.acceptsMembers === 1 }));
 }

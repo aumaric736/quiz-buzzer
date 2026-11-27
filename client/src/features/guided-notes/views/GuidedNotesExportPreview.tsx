@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { GuidedNotesExportPreview as Preview, GuidedNotesExportResult as Result, UserSession } from '@quiz-buzzer/shared';
 import { createExportPreview, getExportResult, GuidedNotesExportApiError, retryExport } from '../services/export-preview-api.js';
-import { buildExportPreviewActionRequest, toExportPreviewViewModels } from './export-preview-view-model.js';
+import { buildExportPreviewActionRequest, canRegenerateExportPreview, toExportPreviewViewModels } from './export-preview-view-model.js';
 import { GuidedNotesExportResult } from './GuidedNotesExportResult.js';
 
 interface GuidedNotesExportPreviewProps {
@@ -15,6 +15,7 @@ export function GuidedNotesExportPreview({ session, activityId, onConfirm }: Gui
   const [result, setResult] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
 
   async function retryPrevious() {
     if (!result) return;
@@ -25,7 +26,7 @@ export function GuidedNotesExportPreview({ session, activityId, onConfirm }: Gui
   }
 
   async function loadPreview() {
-    setError(''); setPreview(null); setResult(null); setBusy(true);
+    setError(''); setRecoveryAvailable(false); setPreview(null); setResult(null); setBusy(true);
     try { setPreview(await createExportPreview(session.sessionId, activityId)); }
     catch (reason) { setError(reason instanceof Error ? reason.message : '建立匯出預覽失敗，請重試。'); }
     finally { setBusy(false); }
@@ -41,7 +42,10 @@ export function GuidedNotesExportPreview({ session, activityId, onConfirm }: Gui
       if (reason instanceof GuidedNotesExportApiError && reason.code === 'EXPORT_OUTCOME_UNKNOWN' && reason.exportId) {
         try { setResult(await getExportResult(session.sessionId, activityId, reason.exportId)); setPreview(null); }
         catch (statusError) { setError(statusError instanceof Error ? statusError.message : reason.message); }
-      } else setError(reason instanceof Error ? reason.message : '確認匯出失敗，請重試。');
+      } else {
+        setError(reason instanceof Error ? reason.message : '確認匯出失敗，請重試。');
+        setRecoveryAvailable(reason instanceof GuidedNotesExportApiError && canRegenerateExportPreview(reason.code));
+      }
     }
     finally { setBusy(false); }
   }
@@ -67,6 +71,7 @@ export function GuidedNotesExportPreview({ session, activityId, onConfirm }: Gui
         {item.winningGroupName && <p className="mt-1 text-sm text-slate-700">成功組別：{item.winningGroupName}</p>}
         {item.answerParts.length > 0 && <p className="mt-1 text-sm text-slate-700">答案：{item.answerParts.join(' / ')}</p>}
         <p className="mt-1 text-sm text-slate-600">填答位置：{item.targetLabels.join('、') || '無'}</p>
+        {item.occupiedTargetLabels.length > 0 && <p className="mt-1 text-sm font-medium text-red-700">已有內容，請清空：{item.occupiedTargetLabels.join('、')}</p>}
       </li>)}</ol>
       <div className="mt-5 flex flex-wrap gap-3">
         <button type="button" className="rounded-xl border border-slate-300 px-4 py-2 font-semibold hover:bg-slate-50" disabled={busy} onClick={cancelPreview}>取消</button>
@@ -74,6 +79,7 @@ export function GuidedNotesExportPreview({ session, activityId, onConfirm }: Gui
       </div>
     </>}
     {error && <p role="alert" className="mt-5 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+    {recoveryAvailable && <button type="button" className="mt-3 rounded-xl border border-indigo-300 px-4 py-2 font-semibold text-indigo-900 hover:bg-indigo-50 disabled:opacity-50" disabled={busy} onClick={() => void loadPreview()}>重新建立預覽</button>}
     {result && <GuidedNotesExportResult result={result} onRetry={() => void retryPrevious()} retrying={busy} />}
   </section>;
 }

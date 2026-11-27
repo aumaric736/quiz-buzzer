@@ -18,6 +18,18 @@ export function enrollGroup(db: SqliteDatabase, sessionId: string, activityId: s
   }
   if (mode !== 'leader' && mode !== 'member') throw new HttpError(400, 'INVALID_ENROLLMENT', '請選擇組長建組或加入既有組別。');
 
+  const requestingSession = db.prepare('SELECT role, retired_at AS retiredAt FROM user_sessions WHERE id = ?').get(sessionId) as
+    { role: string; retiredAt: string | null } | undefined;
+  if (!requestingSession || requestingSession.retiredAt) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新加入活動。');
+  if (requestingSession.role !== 'student') throw new HttpError(403, 'STUDENT_REQUIRED', '只有學生可以加入活動組別。');
+  if (!db.prepare('SELECT 1 FROM activities WHERE id = ?').get(activityId)) {
+    throw new HttpError(404, 'ACTIVITY_NOT_FOUND', '找不到此活動，請確認活動代碼。');
+  }
+
+  // Commit deadline expirations independently so a later rejected enrollment
+  // cannot roll them back and all affected groups can publish after commit.
+  reconcileExpiredStudentSessions(db);
+
   const enroll = db.transaction((): GroupRecord => {
     const session = db.prepare('SELECT role, retired_at, activity_id, group_id FROM user_sessions WHERE id = ?').get(sessionId) as
       { role: string; retired_at: string | null; activity_id: string | null; group_id: string | null } | undefined;
@@ -34,8 +46,6 @@ export function enrollGroup(db: SqliteDatabase, sessionId: string, activityId: s
       const membership = db.prepare('SELECT group_role FROM user_sessions WHERE id = ?').get(sessionId) as { group_role: string | null };
       if (membership.group_role === 'leader') db.prepare('UPDATE groups SET accepts_members = 0 WHERE id = ?').run(session.group_id);
     }
-    reconcileExpiredStudentSessions(db);
-
     let group: GroupRecord;
     let role: 'leader' | 'member';
     if (mode === 'leader') {
@@ -57,7 +67,18 @@ export function enrollGroup(db: SqliteDatabase, sessionId: string, activityId: s
     const now = new Date().toISOString();
     db.prepare('UPDATE user_sessions SET activity_id = ?, group_id = ?, group_role = ?, disconnected_until = NULL, updated_at = ? WHERE id = ?')
       .run(activityId, group.groupId, role, now, sessionId);
-    return group;
+    db.prepare('UPDATE groups SET live_revision = live_revision + 1 WHERE id = ?').run(group.groupId);
+    db.prepare('UPDATE activities SET live_revision = live_revision + 1 WHERE id = ?').run(activityId);
+    const counts = db.prepare(`SELECT g.accepts_members AS acceptsMembers, g.live_revision AS groupLiveRevision,
+        (SELECT count(*) FROM user_sessions online WHERE online.group_id = g.id AND online.role = 'student'
+          AND online.retired_at IS NULL AND online.disconnected_until IS NULL) AS onlineCount,
+        (SELECT count(*) FROM user_sessions occupied WHERE occupied.group_id = g.id AND occupied.role = 'student'
+          AND occupied.retired_at IS NULL) AS occupiedCount
+      FROM groups g WHERE g.id = ?`).get(group.groupId) as {
+        acceptsMembers: number; groupLiveRevision: number; onlineCount: number; occupiedCount: number
+      };
+    return { ...group, groupRole: role, onlineCount: counts.onlineCount, occupiedCount: counts.occupiedCount,
+      groupLiveRevision: counts.groupLiveRevision, capacity: 2, acceptsMembers: counts.acceptsMembers === 1 };
   });
   return enroll.immediate();
 }

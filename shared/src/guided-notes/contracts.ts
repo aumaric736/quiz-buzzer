@@ -53,6 +53,7 @@ export interface GuidedNotesExportPreviewItem {
   answerParts?: string[];
   blankCount: number;
   targetLabels: string[];
+  occupiedTargetLabels?: string[];
 }
 
 export interface GuidedNotesExportPreview {

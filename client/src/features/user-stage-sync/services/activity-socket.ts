@@ -1,13 +1,74 @@
-import { ACTIVITY_PHASES, type ActivityPhaseUpdatedEvent, type ActivitySubscribedEvent, type BuzzerQuestionUpdatedEvent } from '@quiz-buzzer/shared';
+import { ACTIVITY_PHASES, type ActivityPhaseUpdatedEvent, type ActivityRosterUpdatedEvent, type ActivitySubscribedEvent,
+  type ActivityTeamAnswerUpdatedEvent, type BuzzerQuestionUpdatedEvent, type TeamAnswerUpdatedEvent, type TeamPresenceUpdatedEvent } from '@quiz-buzzer/shared';
 import type { ActivitySnapshot } from '@quiz-buzzer/shared';
 
-export type ActivitySocketEvent = ActivityPhaseUpdatedEvent | ActivitySubscribedEvent | BuzzerQuestionUpdatedEvent;
+export type ActivitySocketEvent = ActivityPhaseUpdatedEvent | ActivityRosterUpdatedEvent | ActivitySubscribedEvent
+  | ActivityTeamAnswerUpdatedEvent | BuzzerQuestionUpdatedEvent | TeamAnswerUpdatedEvent | TeamPresenceUpdatedEvent;
 
-export function parseActivitySocketEvent(raw: string, expectedActivityId: string): ActivitySocketEvent | null {
+function validRevision(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function validAnswerParts(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length > 0 && value.every((part) => typeof part === 'string' && part.trim().length > 0);
+}
+
+function validCount(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 2;
+}
+
+function validAnswerSnapshots(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return false;
+    const answer = item as Record<string, unknown>;
+    return Number.isSafeInteger(answer.questionNumber) && (answer.questionNumber as number) > 0
+      && (answer.status === 'unanswered' || answer.status === 'submitted')
+      && (answer.status === 'unanswered' ? answer.answerParts === undefined : validAnswerParts(answer.answerParts));
+  });
+}
+
+export function parseActivitySocketEvent(raw: string, expectedActivityId: string, expectedGroupId?: string): ActivitySocketEvent | null {
   let value: unknown;
   try { value = JSON.parse(raw); } catch { return null; }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const event = value as Record<string, unknown>;
+  if (event.type === 'activity.roster.updated') {
+    if (event.activityId !== expectedActivityId || !validRevision(event.activityLiveRevision) || !Array.isArray(event.groups)) return null;
+    const validGroups = event.groups.every((item) => {
+      if (typeof item !== 'object' || item === null || Array.isArray(item)) return false;
+      const group = item as Record<string, unknown>;
+      return typeof group.groupId === 'string' && group.groupId.length > 0
+        && typeof group.displayName === 'string' && group.displayName.length > 0
+        && (group.inviteCode === undefined || typeof group.inviteCode === 'string')
+        && validCount(group.onlineCount) && validCount(group.occupiedCount)
+        && group.onlineCount <= group.occupiedCount && group.capacity === 2 && typeof group.acceptsMembers === 'boolean'
+        && validAnswerSnapshots(group.answers);
+    });
+    return validGroups ? event as unknown as ActivityRosterUpdatedEvent : null;
+  }
+  if (event.type === 'team.presence.updated') {
+    if (event.activityId !== expectedActivityId || typeof event.groupId !== 'string' || !event.groupId
+      || (expectedGroupId !== undefined && event.groupId !== expectedGroupId) || !validRevision(event.groupLiveRevision)
+      || typeof event.displayName !== 'string' || !event.displayName
+      || (event.groupRole !== 'leader' && event.groupRole !== 'member')
+      || !validCount(event.onlineCount) || !validCount(event.occupiedCount) || event.onlineCount > event.occupiedCount
+      || event.capacity !== 2 || typeof event.acceptsMembers !== 'boolean' || !validAnswerSnapshots(event.answers)) return null;
+    return event as unknown as TeamPresenceUpdatedEvent;
+  }
+  if (event.type === 'team.answer.updated') {
+    if (event.activityId !== expectedActivityId || typeof event.groupId !== 'string' || !event.groupId
+      || (expectedGroupId !== undefined && event.groupId !== expectedGroupId) || !validRevision(event.groupLiveRevision)
+      || !Number.isSafeInteger(event.questionNumber) || (event.questionNumber as number) < 1
+      || event.status !== 'submitted' || !validAnswerParts(event.answerParts)) return null;
+    return event as unknown as TeamAnswerUpdatedEvent;
+  }
+  if (event.type === 'activity.team-answer.updated') {
+    if (event.activityId !== expectedActivityId || !validRevision(event.activityLiveRevision)
+      || typeof event.groupId !== 'string' || !event.groupId || typeof event.groupName !== 'string' || !event.groupName
+      || !Number.isSafeInteger(event.questionNumber) || (event.questionNumber as number) < 1
+      || event.status !== 'submitted' || !validAnswerParts(event.answerParts)) return null;
+    return event as unknown as ActivityTeamAnswerUpdatedEvent;
+  }
   if (event.type === 'buzzer.question.updated') {
     if (event.activityId !== expectedActivityId || !Number.isSafeInteger(event.questionNumber) || (event.questionNumber as number) < 1
       || event.status !== 'won' || typeof event.groupId !== 'string' || !event.groupId
@@ -23,7 +84,10 @@ export function parseActivitySocketEvent(raw: string, expectedActivityId: string
 }
 
 export function shouldApplyActivityRevision(event: ActivitySocketEvent, currentRevision: number): boolean {
-  return event.type === 'buzzer.question.updated' || event.revision > currentRevision;
+  if (event.type === 'buzzer.question.updated') return true;
+  if (event.type === 'activity.roster.updated' || event.type === 'activity.team-answer.updated') return event.activityLiveRevision > currentRevision;
+  if (event.type === 'team.presence.updated' || event.type === 'team.answer.updated') return event.groupLiveRevision > currentRevision;
+  return event.revision > currentRevision;
 }
 
 export interface ActivitySocketConnection { close(): void }
@@ -36,12 +100,15 @@ export function connectActivitySocket(
   onConnectionChange: (connected: boolean) => void,
   recoverSnapshot?: () => Promise<ActivitySnapshot>,
   endpoint?: string,
-  onRecoveryError?: (error: Error) => void
+  onRecoveryError?: (error: Error) => void,
+  expectedGroupId?: string
 ): ActivitySocketConnection {
   const protocol = typeof location !== 'undefined' && location.protocol === 'https:' ? 'wss:' : 'ws:';
   const defaultUrl = `${protocol}//127.0.0.1:3000/ws`;
   const url = endpoint ?? import.meta.env.VITE_WS_URL ?? defaultUrl;
   let currentRevision = initialRevision;
+  let currentActivityLiveRevision = -1;
+  let currentGroupLiveRevision = -1;
   let currentSocket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let reconnectDelay = 250;
@@ -88,7 +155,7 @@ export function connectActivitySocket(
     socket.addEventListener('error', () => onConnectionChange(false));
     socket.addEventListener('message', (message) => {
       if (typeof message.data !== 'string') return;
-      const event = parseActivitySocketEvent(message.data, activityId);
+      const event = parseActivitySocketEvent(message.data, activityId, expectedGroupId);
       if (!event) {
         try {
           const payload: unknown = JSON.parse(message.data);
@@ -103,11 +170,22 @@ export function connectActivitySocket(
       if (event.type === 'activity.subscribed') {
         reconnectDelay = 250;
         onRecoveryError?.(new Error(''));
-        onEvent(event);
+        if (event.revision >= currentRevision) {
+          currentRevision = event.revision;
+          onEvent(event);
+        }
         return;
       }
-      if (!shouldApplyActivityRevision(event, currentRevision)) return;
-      if (event.type !== 'buzzer.question.updated') currentRevision = event.revision;
+      if (event.type === 'activity.roster.updated' || event.type === 'activity.team-answer.updated') {
+        if (!shouldApplyActivityRevision(event, currentActivityLiveRevision)) return;
+        currentActivityLiveRevision = event.activityLiveRevision;
+      } else if (event.type === 'team.presence.updated' || event.type === 'team.answer.updated') {
+        if (!shouldApplyActivityRevision(event, currentGroupLiveRevision)) return;
+        currentGroupLiveRevision = event.groupLiveRevision;
+      } else {
+        if (!shouldApplyActivityRevision(event, currentRevision)) return;
+        if (event.type !== 'buzzer.question.updated') currentRevision = event.revision;
+      }
       onEvent(event);
     });
   };

@@ -102,6 +102,8 @@ export function acceptAnswerSubmission(db: SqliteDatabase, input: AcceptAnswerIn
       (activity_id, question_number, group_id, answer_parts_json, accepted_at, submission_rank, is_winner, receipt_sequence)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(input.activityId, input.questionNumber, group.id, JSON.stringify(input.answerParts), acceptedAt, submissionRank, isWinner ? 1 : 0, input.receiptSequence ?? null);
+    db.prepare('UPDATE groups SET live_revision = live_revision + 1 WHERE id = ?').run(group.id);
+    db.prepare('UPDATE activities SET live_revision = live_revision + 1 WHERE id = ?').run(input.activityId);
     return {
       acceptedOrder: Number(result.lastInsertRowid), acceptedAt,
       activityId: input.activityId, questionNumber: input.questionNumber,

@@ -90,8 +90,8 @@ describe('Guided Notes export confirmation', () => {
     expect(await response.json()).toMatchObject({ status: 'completed', writtenQuestionNumbers: [1], unchangedQuestionNumbers: [2, 3, 4], failedQuestionNumbers: [] });
     expect(sheets.writes).toHaveLength(1);
     expect(sheets.writes[0]).toEqual([
-      { sheetId: 7, rowIndex: 4, columnIndex: 7, value: '答案甲' },
-      { sheetId: 7, rowIndex: 5, columnIndex: 7, value: '答案乙' }
+      { sheetId: 7, rowIndex: 4, columnIndex: 7, value: '小組：藍隊。回答：答案甲。' },
+      { sheetId: 7, rowIndex: 5, columnIndex: 7, value: '小組：藍隊。回答：答案乙。' }
     ]);
     expect(sheets.grid.cells.find((cell) => cell.rowIndex === 4 && cell.columnIndex === 6)?.enteredValue).toBe('(1)');
     expect(sheets.grid.cells.find((cell) => cell.rowIndex === 12 && cell.columnIndex === 1)?.enteredValue).toBe(4);
@@ -111,7 +111,9 @@ describe('Guided Notes export confirmation', () => {
     sheets.grid.cells.push({ rowIndex: 4, columnIndex: 7, enteredValue: '外部變更' });
     const response = await post('exports', { previewId });
     expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: 'TARGET_NO_LONGER_BLANK' });
+    const body = await response.json() as { code: string; message: string };
+    expect(body).toMatchObject({ code: 'TARGET_CELLS_OCCUPIED' });
+    expect(body.message).toContain('第 1 題空格 1');
     expect(sheets.writes).toHaveLength(0);
   });
 
@@ -144,8 +146,30 @@ describe('Guided Notes export confirmation', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: 'completed', writtenQuestionNumbers: [1], unchangedQuestionNumbers: [2, 3, 4, 5, 6] });
     expect(sheets.writes).toHaveLength(1);
-    expect(sheets.writes[0]).toEqual([{ sheetId: 7, rowIndex: 11, columnIndex: 9, value: '第一題答案' }]);
+    expect(sheets.writes[0]).toEqual([{ sheetId: 7, rowIndex: 11, columnIndex: 9, value: '小組：藍隊。回答：第一題答案。' }]);
     expect(sheets.grid.cells.find((cell) => cell.rowIndex === 11 && cell.columnIndex === 4)?.enteredValue).toBe(1);
     expect(sheets.grid.cells.find((cell) => cell.rowIndex === 13 && cell.columnIndex === 4)?.enteredValue).toBe(2);
+  });
+
+  it('previews every mapped target and rejects all writes when a formula target displays no value', async () => {
+    sheets.grid.cells.push({ rowIndex: 5, columnIndex: 7, enteredValue: null, formula: '=IF(A1="","",A1)', formattedValue: '' });
+    const previewResponse = await post('export-previews', {});
+    expect(previewResponse.status).toBe(201);
+    const preview = await previewResponse.json() as { previewId: string; items: Array<{ questionNumber: number; occupiedTargetLabels?: string[] }> };
+    expect(preview.items.find((item) => item.questionNumber === 1)?.occupiedTargetLabels).toEqual(['第 1 題空格 2']);
+    const response = await post('exports', { previewId: preview.previewId });
+    expect(response.status).toBe(409);
+    expect(await response.text()).toContain('第 1 題空格 2');
+    expect(sheets.writes).toHaveLength(0);
+  });
+
+  it('allows a fresh preview after an earlier preview expires', async () => {
+    const expiredId = await createPreviewId();
+    db.prepare('UPDATE guided_notes_export_attempts SET preview_expires_at = ? WHERE id = ?').run(new Date(Date.now() - 1).toISOString(), expiredId);
+    const expired = await post('exports', { previewId: expiredId });
+    expect(expired.status).toBe(409);
+    expect(await expired.json()).toMatchObject({ code: 'PREVIEW_EXPIRED' });
+    const refreshedId = await createPreviewId();
+    expect(refreshedId).not.toBe(expiredId);
   });
 });

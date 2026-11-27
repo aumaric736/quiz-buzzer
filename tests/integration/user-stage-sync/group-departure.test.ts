@@ -6,7 +6,7 @@ import { createActivity } from '../../../server/src/features/user-stage-sync/app
 import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
-import { expireStudentSession } from '../../../server/src/features/user-stage-sync/application/student-session-presence-service.js';
+import { expireStudentSession, markStudentDisconnected } from '../../../server/src/features/user-stage-sync/application/student-session-presence-service.js';
 import { createTestDatabase } from '../../helpers/sqlite.js';
 
 describe('group departure', () => {
@@ -39,6 +39,7 @@ describe('group departure', () => {
     await leave(member.sessionId);
     const replacement = createSession(db, 'student');
     expect((await enroll(replacement.sessionId, { mode: 'member', inviteCode: group.inviteCode })).status).toBe(201);
+    markStudentDisconnected(db, leader.sessionId, new Date(Date.now() - 120_001));
     expireStudentSession(db, leader.sessionId, new Date());
     expect(db.prepare('SELECT accepts_members FROM groups WHERE id = ?').get(group.groupId)).toEqual({ accepts_members: 0 });
     expect(db.prepare('SELECT retired_at FROM user_sessions WHERE id = ?').get(replacement.sessionId)).toEqual({ retired_at: null });
@@ -48,6 +49,7 @@ describe('group departure', () => {
     const leader = createSession(db, 'student');
     const group = await (await enroll(leader.sessionId, { mode: 'leader', groupName: 'Member Timeout' })).json() as { inviteCode: string };
     const member = createSession(db, 'student'); await enroll(member.sessionId, { mode: 'member', inviteCode: group.inviteCode });
+    markStudentDisconnected(db, member.sessionId, new Date(Date.now() - 120_001));
     expireStudentSession(db, member.sessionId, new Date());
     const replacement = createSession(db, 'student');
     expect((await enroll(replacement.sessionId, { mode: 'member', inviteCode: group.inviteCode })).status).toBe(201);

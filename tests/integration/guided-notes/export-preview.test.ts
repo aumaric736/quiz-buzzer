@@ -98,11 +98,22 @@ describe('Guided Notes export preview API', () => {
       { questionNumber: 2, status: 'no_winner', blankCount: 1 }
     ]);
     expect(body.previewId).toBeTruthy();
+    expect(body.items[0]).toMatchObject({ targetLabels: ['第 1 題空格 1', '第 1 題空格 2'], occupiedTargetLabels: [] });
     expect(sheets.writes).toHaveLength(0);
     const persisted = db.prepare('SELECT status, answer_snapshot_hash FROM guided_notes_export_attempts WHERE id = ?').get(body.previewId) as { status: string; answer_snapshot_hash: string };
     expect(persisted.status).toBe('previewed');
     expect(persisted.answer_snapshot_hash).not.toContain('答案甲');
     expect(JSON.stringify(db.prepare('SELECT * FROM guided_notes_export_attempts').all())).not.toContain('答案乙');
+    const expiry = db.prepare('SELECT preview_expires_at AS expiresAt, created_at AS createdAt FROM guided_notes_export_attempts WHERE id = ?').get(body.previewId) as { expiresAt: string; createdAt: string };
+    expect(Date.parse(expiry.expiresAt) - Date.parse(expiry.createdAt)).toBe(5 * 60 * 1000);
+  });
+
+  it('shows occupied target labels, including cells with formulas and empty displayed values', async () => {
+    sheets.grid.cells.push({ rowIndex: 1, columnIndex: 3, enteredValue: null, formula: '=IF(A1="","",A1)', formattedValue: '' });
+    const response = await requestPreview();
+    expect(response.status).toBe(201);
+    const body = await response.json() as { items: Array<{ questionNumber: number; occupiedTargetLabels?: string[] }> };
+    expect(body.items.find((item) => item.questionNumber === 1)?.occupiedTargetLabels).toEqual(['第 1 題空格 1']);
   });
 
   it('marks a per-question answer-part count mismatch without shifting answers to another slot', async () => {

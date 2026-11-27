@@ -92,8 +92,8 @@ describe('Guided Notes app composition', () => {
     expect(exportResponse.status).toBe(200);
     expect(await exportResponse.json()).toMatchObject({ status: 'completed', writtenQuestionNumbers: [1], unchangedQuestionNumbers: [2] });
     expect(sheets.writes).toEqual([[
-      { sheetId: 7, rowIndex: 1, columnIndex: 3, value: '答案甲' },
-      { sheetId: 7, rowIndex: 2, columnIndex: 3, value: '答案乙' }
+      { sheetId: 7, rowIndex: 1, columnIndex: 3, value: '小組：藍隊。回答：答案甲。' },
+      { sheetId: 7, rowIndex: 2, columnIndex: 3, value: '小組：藍隊。回答：答案乙。' }
     ]]);
   });
 });

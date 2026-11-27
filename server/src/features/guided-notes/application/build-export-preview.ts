@@ -6,8 +6,9 @@ import { detectGuidedNotesLayout, LayoutRecognitionError } from '../domain/layou
 import { getGuidedNotesSource, listActivityQuestions, listGuidedNotesMappings } from '../persistence/guided-notes-repository.js';
 import { SheetsGatewayError, type SheetsGateway } from '../google-sheets/sheets-gateway.js';
 import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
+import { isSheetsCellBlank } from './target-cell-blank.js';
 
-const PREVIEW_LIFETIME_MS = 15 * 60 * 1000;
+const PREVIEW_LIFETIME_MS = 5 * 60 * 1000;
 
 function requireTeacherForEndedActivity(db: SqliteDatabase, sessionId: string, activityId: string): void {
   requireActiveSession(db, sessionId);
@@ -84,7 +85,10 @@ export async function buildExportPreview(
   const storedQuestions = listActivityQuestions(db, activityId);
   const storedMappings = listGuidedNotesMappings(db, source.id);
   if (storedMappings.length === 0) throw new HttpError(409, 'GUIDED_NOTES_NOT_IMPORTED', '此講義沒有有效的填答位置，請重新匯入。');
-  const layout = detectGuidedNotesLayout(grid);
+  const targetCoordinates = new Set(storedMappings.map((mapping) => `${mapping.rowIndex}:${mapping.columnIndex}`));
+  const layoutGrid = { ...grid, cells: grid.cells.map((cell) => targetCoordinates.has(`${cell.rowIndex}:${cell.columnIndex}`)
+    ? { ...cell, enteredValue: null, formula: null, formattedValue: null } : cell) };
+  const layout = detectGuidedNotesLayout(layoutGrid);
   if (layout.structureFingerprint !== source.structureFingerprint) {
     throw new HttpError(409, 'SOURCE_CHANGED', '匯入後講義題目或填答位置已變更，請重新匯入並檢查新對應後再建立預覽。');
   }
@@ -104,14 +108,17 @@ export async function buildExportPreview(
     const blankCount = mappingCounts.get(questionNumber) ?? 0;
     if (blankCount !== blanks.length) throw new HttpError(409, 'SOURCE_CHANGED', '講義填答位置與已匯入對應不一致，請重新匯入。');
     const targetLabels = blanks.map((blank) => `第 ${questionNumber} 題空格 ${blank.slotOrder + 1}`);
-    if (!result.winner) return { questionNumber, status: 'no_winner', blankCount, targetLabels };
+    const occupiedTargetLabels = blanks.flatMap((blank, index) => isSheetsCellBlank(grid.cells.find((cell) => cell.rowIndex === blank.rowIndex && cell.columnIndex === blank.columnIndex))
+      ? [] : [targetLabels[index]]);
+    if (!result.winner) return { questionNumber, status: 'no_winner', blankCount, targetLabels, occupiedTargetLabels };
     return {
       questionNumber,
       status: result.answerParts.length === blankCount ? 'ready' : 'part_count_mismatch',
       winningGroupName: result.winningGroupName,
       answerParts: result.answerParts,
       blankCount,
-      targetLabels
+      targetLabels,
+      occupiedTargetLabels
     };
   });
 
