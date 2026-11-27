@@ -119,10 +119,11 @@ export class GoogleSheetsGateway implements SheetsGateway {
         for (const [rowOffset, row] of (data.rowData ?? []).entries()) {
           for (const [columnOffset, cell] of (row.values ?? []).entries()) {
             const value = enteredValue(cell);
+            const formula = cell.userEnteredValue?.formulaValue ?? null;
             const formattedValue = cell.formattedValue ?? null;
             const note = cell.note ?? null;
-            if (value !== null || formattedValue !== null || note !== null) {
-              cells.push({ rowIndex: startRow + rowOffset, columnIndex: startColumn + columnOffset, enteredValue: value, formattedValue, note });
+            if (value !== null || formula !== null || formattedValue !== null || note !== null) {
+              cells.push({ rowIndex: startRow + rowOffset, columnIndex: startColumn + columnOffset, enteredValue: value, formula, formattedValue, note });
             }
           }
         }

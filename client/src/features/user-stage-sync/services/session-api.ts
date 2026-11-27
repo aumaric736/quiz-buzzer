@@ -26,6 +26,10 @@ export function createLocalSession(role: Role): Promise<UserSession> {
   });
 }
 
+export function loginTeacher(username: string, password: string): Promise<UserSession> {
+  return request('/api/teacher/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password }) });
+}
+
 export function restoreLocalSession(sessionId: string, apiBase = DEFAULT_API_BASE): Promise<UserSession> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}`, undefined, apiBase);
 }

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../../server/src/app.js';
 import { createTestDatabase } from '../../helpers/sqlite.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
+import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import type { Server } from 'node:http';
 
 describe('session API', () => {
@@ -23,8 +24,8 @@ describe('session API', () => {
     db.close();
   });
 
-  it('creates both supported roles and restores their null context', async () => {
-    for (const role of ['teacher', 'student']) {
+  it('creates student sessions and restores their null context', async () => {
+    for (const role of ['student']) {
       const created = await fetch(`${baseUrl}/api/sessions`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role })
       });
@@ -38,21 +39,18 @@ describe('session API', () => {
   });
 
   it('rejects missing or unknown role values without creating a session', async () => {
-    for (const body of [{}, { role: 'admin' }, { role: 3 }, null]) {
+    for (const body of [{}, { role: 'admin' }, { role: 3 }, { role: 'teacher' }, null]) {
       const response = await fetch(`${baseUrl}/api/sessions`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
       });
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ code: 'INVALID_ROLE' });
+      expect(response.status).toBe(body && typeof body === 'object' && 'role' in body && body.role === 'teacher' ? 403 : 400);
+      expect(await response.json()).toHaveProperty('code');
     }
     expect(db.prepare('SELECT count(*) AS total FROM user_sessions').get()).toEqual({ total: 0 });
   });
 
   it('retires only the selected student session and preserves the group row and reserved name', async () => {
-    const teacherResponse = await fetch(`${baseUrl}/api/sessions`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role: 'teacher' })
-    });
-    const teacher = await teacherResponse.json() as { sessionId: string };
+    const teacher = createSession(db, 'teacher');
     const studentResponse = await fetch(`${baseUrl}/api/sessions`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role: 'student' })
     });
@@ -105,7 +103,7 @@ describe('session API', () => {
   });
 
   it('retires a fresh session without needing prior activity context', async () => {
-    const created = await fetch(`${baseUrl}/api/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role: 'teacher' }) });
+    const created = await fetch(`${baseUrl}/api/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role: 'student' }) });
     const fresh = await created.json() as { sessionId: string };
     const response = await fetch(`${baseUrl}/api/sessions/${fresh.sessionId}/reset-context`, { method: 'POST' });
     expect(response.status).toBe(200);

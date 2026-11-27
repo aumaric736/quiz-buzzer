@@ -9,6 +9,7 @@ export interface SheetsCell {
   rowIndex: number;
   columnIndex: number;
   enteredValue: string | number | boolean | null;
+  formula?: string | null;
   formattedValue?: string | null;
   note?: string | null;
 }

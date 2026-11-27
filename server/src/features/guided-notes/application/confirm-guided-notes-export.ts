@@ -6,6 +6,7 @@ import { detectGuidedNotesLayout, LayoutRecognitionError } from '../domain/layou
 import { getGuidedNotesSource, listActivityQuestions, listGuidedNotesMappings } from '../persistence/guided-notes-repository.js';
 import { SheetsGatewayError, type SheetsCell, type SheetsCellUpdate, type SheetsGateway, type SheetsWorksheetGrid } from '../google-sheets/sheets-gateway.js';
 import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
+import { isSheetsCellBlank } from './target-cell-blank.js';
 
 interface ExportAttemptRow {
   id: string;
@@ -52,9 +53,9 @@ export async function confirmGuidedNotesExport(
   previewId: string
 ): Promise<GuidedNotesExportResult> {
   requireActiveSession(db, sessionId);
-  const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
+  const session = db.prepare('SELECT role, authenticated_at FROM user_sessions WHERE id = ?').get(sessionId) as { role: string; authenticated_at: string | null } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
-  if (session.role !== 'teacher') throw new HttpError(403, 'TEACHER_REQUIRED', '只有老師可以確認 Guided Notes 匯出。');
+  if (session.role !== 'teacher' || !session.authenticated_at) throw new HttpError(403, 'TEACHER_REQUIRED', '只有登入的老師可以確認 Guided Notes 匯出。');
   const activity = db.prepare('SELECT created_by_session_id, phase FROM activities WHERE id = ?').get(activityId) as { created_by_session_id: string; phase: string } | undefined;
   if (!activity) throw new HttpError(404, 'ACTIVITY_NOT_FOUND', '找不到此活動。');
   if (activity.created_by_session_id !== sessionId) throw new HttpError(403, 'ACTIVITY_OWNER_REQUIRED', '只有建立此活動的老師可以匯出 Guided Notes。');
@@ -74,10 +75,14 @@ export async function confirmGuidedNotesExport(
 
   const questions = listActivityQuestions(db, activityId);
   let layout;
-  try { layout = detectGuidedNotesLayout(grid); }
+  const preflightMappings = listGuidedNotesMappings(db, source.id);
+  const targetCoordinates = new Set(preflightMappings.map((mapping) => `${mapping.rowIndex}:${mapping.columnIndex}`));
+  const layoutGrid = { ...grid, cells: grid.cells.map((cell) => targetCoordinates.has(`${cell.rowIndex}:${cell.columnIndex}`)
+    ? { ...cell, enteredValue: null, formula: null, formattedValue: null } : cell) };
+  try { layout = detectGuidedNotesLayout(layoutGrid); }
   catch (error) {
     if (error instanceof LayoutRecognitionError && error.code === 'BLANK_NOT_FOUND') {
-      const occupied = listGuidedNotesMappings(db, source.id).some((mapping) => currentCellValue(grid.cells, mapping.rowIndex, mapping.columnIndex) !== null);
+      const occupied = preflightMappings.some((mapping) => !isSheetsCellBlank(grid.cells.find((cell) => cell.rowIndex === mapping.rowIndex && cell.columnIndex === mapping.columnIndex)));
       if (occupied) throw new HttpError(409, 'TARGET_NO_LONGER_BLANK', '一個或多個填答格已被填入內容，為避免覆寫請重新檢查講義。');
       throw new HttpError(409, 'SOURCE_CHANGED', '講義填答位置已變更，請重新匯入並建立新預覽。');
     }
@@ -92,7 +97,7 @@ export async function confirmGuidedNotesExport(
   const answerHash = computeAnswerSnapshotHash(questions, answerResults);
   if (answerHash !== attempt.answer_snapshot_hash) throw new HttpError(409, 'ANSWERS_CHANGED', '預覽後作答結果已有變更，請重新建立預覽。');
   const resultByQuestion = validateAnswerResults(questions, answerResults);
-  const storedMappings = listGuidedNotesMappings(db, source.id);
+  const storedMappings = preflightMappings;
   const updates: SheetsCellUpdate[] = [];
   const unchanged: number[] = [];
   const failed: number[] = [];
@@ -108,8 +113,18 @@ export async function confirmGuidedNotesExport(
     if (!answer.winner) { unchanged.push(question.questionNumber); continue; }
     if (answer.answerParts.length !== question.blanks.length) { failed.push(question.questionNumber); continue; }
     for (const [index, blank] of question.blanks.entries()) {
-      updates.push({ sheetId: source.sheetId, rowIndex: blank.rowIndex, columnIndex: blank.columnIndex, value: answer.answerParts[index] });
+      updates.push({ sheetId: source.sheetId, rowIndex: blank.rowIndex, columnIndex: blank.columnIndex,
+        value: `小組：${answer.winningGroupName}。回答：${answer.answerParts[index]}。` });
     }
+  }
+
+  const occupiedTargets = storedMappings.flatMap((mapping) => {
+    const cell = grid.cells.find((item) => item.rowIndex === mapping.rowIndex && item.columnIndex === mapping.columnIndex);
+    return isSheetsCellBlank(cell) ? [] : [`第 ${mapping.questionNumber} 題空格 ${mapping.slotOrder + 1}`];
+  });
+  if (occupiedTargets.length > 0) {
+    setAttempt(db, previewId, 'failed', [], [], [...new Set(storedMappings.map((mapping) => mapping.questionNumber))]);
+    throw new HttpError(409, 'TARGET_CELLS_OCCUPIED', `以下填答格已有內容，請清空後重新建立預覽：${occupiedTargets.join('、')}`);
   }
 
   const writableQuestions = [...new Set(updates.map((update) => layout.questions.find((question) => question.blanks.some((blank) => blank.rowIndex === update.rowIndex && blank.columnIndex === update.columnIndex))!.questionNumber))];

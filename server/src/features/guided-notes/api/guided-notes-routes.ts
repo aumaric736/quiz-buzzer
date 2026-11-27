@@ -6,6 +6,7 @@ import { discoverGuidedNotesWorksheets, importGuidedNotes } from '../application
 import { buildExportPreview } from '../application/build-export-preview.js';
 import { confirmGuidedNotesExport } from '../application/confirm-guided-notes-export.js';
 import { getExportAttemptResult } from '../persistence/export-attempt-repository.js';
+import { retryGuidedNotesExport } from '../application/export-retry-service.js';
 import type { SheetsGateway } from '../google-sheets/sheets-gateway.js';
 
 function requestSessionId(request: Request): string {
@@ -78,6 +79,16 @@ export function guidedNotesRoutes(db: SqliteDatabase, gateway: SheetsGateway, an
       const activityId = requireNonEmptyString(request.params.activityId, 'activityId', 100);
       const exportId = requireNonEmptyString(request.params.exportId, 'exportId', 100);
       response.json(getExportAttemptResult(db, requestSessionId(request), activityId, exportId));
+    } catch (error) { next(error); }
+  });
+
+  router.post('/api/activities/:activityId/guided-notes/exports/:exportId/retry', async (request, response, next) => {
+    try {
+      if (!isRecord(request.body) || Object.keys(request.body).length !== 0) throw new HttpError(400, 'INVALID_REQUEST_BODY', '安全重試不需要額外欄位。');
+      if (!answerProvider) throw new HttpError(503, 'ANSWER_PROVIDER_UNAVAILABLE', '作答子功能尚未提供最終答案資料。');
+      const activityId = requireNonEmptyString(request.params.activityId, 'activityId', 100);
+      const exportId = requireNonEmptyString(request.params.exportId, 'exportId', 100);
+      response.json(await retryGuidedNotesExport(db, gateway, answerProvider, requestSessionId(request), activityId, exportId));
     } catch (error) { next(error); }
   });
 

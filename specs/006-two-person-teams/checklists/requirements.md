@@ -1,4 +1,4 @@
-# Specification Quality Checklist: 兩人小組邀請
+# Specification Quality Checklist: 小組活動與逐題搶答
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-11-25  
@@ -18,7 +18,7 @@
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic
 - [x] All acceptance scenarios are defined
-- [x] Edge cases are identified, including leader departure, member replacement, and teacher departure
+- [x] Edge cases are identified
 - [x] Scope is clearly bounded
 - [x] Dependencies and assumptions identified
 
@@ -26,12 +26,9 @@
 
 - [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
-- [x] Feature meets measurable outcomes defined in Success Criteria
+- [x] Success criteria map to verifiable outcomes
 - [x] No implementation details leak into specification
 
 ## Notes
 
-- Covered group leader departure, member replacement, single-teacher activities, forced activity ending when the teacher leaves, and student read-only access to final results; no blocking issues found, ready for `$speckit-plan`.
-
-
-
+- Incorporated the provided decisions on per-question submissions, teacher login and activity setup, distinct activity and group codes, shared team identity, answer recovery, delayed result publication, and teacher departure.

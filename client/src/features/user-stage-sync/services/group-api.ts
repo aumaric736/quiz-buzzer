@@ -2,11 +2,11 @@ import type { GroupRecord } from '@quiz-buzzer/shared';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:3000';
 
-export async function joinActivity(sessionId: string, activityId: string, groupName: string): Promise<GroupRecord> {
+export async function joinActivity(sessionId: string, activityId: string, enrollment: { mode: 'leader'; groupName: string } | { mode: 'member'; inviteCode: string }): Promise<GroupRecord> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE}/api/activities/${encodeURIComponent(activityId)}/groups`, {
-      method: 'POST', headers: { 'content-type': 'application/json', 'X-Local-Session-Id': sessionId }, body: JSON.stringify({ groupName })
+      method: 'POST', headers: { 'content-type': 'application/json', 'X-Local-Session-Id': sessionId }, body: JSON.stringify(enrollment)
     });
   } catch { throw new Error('無法連線到本機服務，請確認服務正在執行後重試。'); }
   let result: unknown;

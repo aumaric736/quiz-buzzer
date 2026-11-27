@@ -1,20 +1,60 @@
 @startuml
-actor 組長
-actor 同學
-participant 學生流程
-participant 小組服務
-participant 活動小組資料
-組長 -> 學生流程 : 選擇組長建組並輸入組名
-學生流程 -> 小組服務 : 建立小組
-小組服務 -> 活動小組資料 : 驗證組名並建立組長成員
-活動小組資料 --> 小組服務 : 小組與六位數邀請碼
-小組服務 --> 學生流程 : 建立成功與邀請碼
-學生流程 --> 組長 : 顯示小組及邀請碼
-組長 -> 同學 : 分享邀請碼
-同學 -> 學生流程 : 選擇加入並輸入邀請碼
-學生流程 -> 小組服務 : 加入小組
-小組服務 -> 活動小組資料 : 驗證邀請碼及可用名額
-活動小組資料 --> 小組服務 : 加入成功或拒絕
-小組服務 --> 學生流程 : 小組與成員結果
-學生流程 --> 同學 : 顯示加入結果
+title 小組活動與逐題搶答 - 主要流程
+actor Teacher
+actor Leader
+actor Member
+participant Client
+participant "Express Services" as API
+participant "WebSocket Presence" as WS
+database SQLite as DB
+participant "Sheets Gateway" as Sheets
+
+Teacher -> Client : sign in and create activity
+Client -> API : configured credentials / create
+API -> DB : validate owner; persist activity
+API --> Client : activity join code
+
+Leader -> Client : join activity; create group
+Client -> API : leader session + activity code
+API -> DB : generate random six-digit code
+API -> DB : unique (activity, code); enforce 100 groups
+API --> Client : invite code
+Member -> Client : enter activity code + invite code
+Client -> API : member join
+API -> DB : count active sessions; enforce max 2
+API --> Client : shared group identity
+
+par student socket reconnect window
+  WS -> DB : last socket closes; set deadline now + 2m
+  WS -> DB : reconnect before deadline; clear deadline
+else expiry
+  WS -> DB : deadline expires; retire session and release seat
+end
+
+par teacher end and question submissions
+  Leader -> Client : submit one question only
+Client -> API : complete answer request
+API -> DB : allocate activity receipt sequence
+API -> DB : validate and save first group/question answer
+API --> Client : own group acknowledgment only
+Teacher -> Client : end activity
+Client -> API : ordered end request
+API -> DB : same queue assigns end receipt; freeze results
+end
+
+par teacher disconnected grace
+  WS -> DB : teacher last socket closes; deadline now + 2m
+  WS -> DB : owner reconnect clears deadline
+else timeout or explicit teacher leave
+  API -> DB : ordered end; freeze results and publish final phase
+end
+
+API -> Sheets : write winners; skip no-winner cells
+Sheets --> API : success or retryable failure
+API --> Teacher : immutable results / export status
+Teacher -> API : retry failed/unknown export by ID
+API -> Sheets : reread source and final snapshot; safe new attempt
+Student -> Client : reload final results
+Client -> API : activity code only; ended result query
+API --> Client : final result snapshot
 @enduml

@@ -28,7 +28,7 @@ function App() {
     } catch (reason) {
       setSession(null);
       setActivity(null);
-      setRestoreError(isRetiredSessionError(reason) ? '此本機工作階段已結束或不存在。請使用上方按鈕返回角色選擇。' : reason instanceof Error ? reason.message : '無法恢復工作階段，請重試。');
+      setRestoreError(isRetiredSessionError(reason) ? '' : reason instanceof Error ? reason.message : '無法恢復工作階段，請重試。');
     } finally { setRestoring(false); }
   }
 

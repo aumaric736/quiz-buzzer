@@ -8,9 +8,9 @@ import { requireActiveSession } from '../../user-stage-sync/application/session-
 
 function requireTeacherActivity(db: SqliteDatabase, sessionId: string, activityId: string): void {
   requireActiveSession(db, sessionId);
-  const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
+  const session = db.prepare('SELECT role, authenticated_at FROM user_sessions WHERE id = ?').get(sessionId) as { role: string; authenticated_at: string | null } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
-  if (session.role !== 'teacher') throw new HttpError(403, 'TEACHER_REQUIRED', '只有老師可以匯入 Guided Notes。');
+  if (session.role !== 'teacher' || !session.authenticated_at) throw new HttpError(403, 'TEACHER_REQUIRED', '只有登入的老師可以匯入 Guided Notes。');
   const activity = db.prepare('SELECT created_by_session_id FROM activities WHERE id = ?').get(activityId) as { created_by_session_id: string } | undefined;
   if (!activity) throw new HttpError(404, 'ACTIVITY_NOT_FOUND', '找不到此活動。');
   if (activity.created_by_session_id !== sessionId) throw new HttpError(403, 'ACTIVITY_OWNER_REQUIRED', '只有建立此活動的老師可以匯入 Guided Notes。');

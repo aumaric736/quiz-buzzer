@@ -6,14 +6,15 @@ import { detectGuidedNotesLayout, LayoutRecognitionError } from '../domain/layou
 import { getGuidedNotesSource, listActivityQuestions, listGuidedNotesMappings } from '../persistence/guided-notes-repository.js';
 import { SheetsGatewayError, type SheetsGateway } from '../google-sheets/sheets-gateway.js';
 import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
+import { isSheetsCellBlank } from './target-cell-blank.js';
 
-const PREVIEW_LIFETIME_MS = 15 * 60 * 1000;
+const PREVIEW_LIFETIME_MS = 5 * 60 * 1000;
 
 function requireTeacherForEndedActivity(db: SqliteDatabase, sessionId: string, activityId: string): void {
   requireActiveSession(db, sessionId);
-  const session = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
+  const session = db.prepare('SELECT role, authenticated_at FROM user_sessions WHERE id = ?').get(sessionId) as { role: string; authenticated_at: string | null } | undefined;
   if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到本機工作階段，請重新選擇角色。');
-  if (session.role !== 'teacher') throw new HttpError(403, 'TEACHER_REQUIRED', '只有老師可以準備 Guided Notes 匯出。');
+  if (session.role !== 'teacher' || !session.authenticated_at) throw new HttpError(403, 'TEACHER_REQUIRED', '只有登入的老師可以準備 Guided Notes 匯出。');
   const activity = db.prepare('SELECT created_by_session_id, phase FROM activities WHERE id = ?').get(activityId) as
     | { created_by_session_id: string; phase: string }
     | undefined;
@@ -84,7 +85,10 @@ export async function buildExportPreview(
   const storedQuestions = listActivityQuestions(db, activityId);
   const storedMappings = listGuidedNotesMappings(db, source.id);
   if (storedMappings.length === 0) throw new HttpError(409, 'GUIDED_NOTES_NOT_IMPORTED', '此講義沒有有效的填答位置，請重新匯入。');
-  const layout = detectGuidedNotesLayout(grid);
+  const targetCoordinates = new Set(storedMappings.map((mapping) => `${mapping.rowIndex}:${mapping.columnIndex}`));
+  const layoutGrid = { ...grid, cells: grid.cells.map((cell) => targetCoordinates.has(`${cell.rowIndex}:${cell.columnIndex}`)
+    ? { ...cell, enteredValue: null, formula: null, formattedValue: null } : cell) };
+  const layout = detectGuidedNotesLayout(layoutGrid);
   if (layout.structureFingerprint !== source.structureFingerprint) {
     throw new HttpError(409, 'SOURCE_CHANGED', '匯入後講義題目或填答位置已變更，請重新匯入並檢查新對應後再建立預覽。');
   }
@@ -104,14 +108,17 @@ export async function buildExportPreview(
     const blankCount = mappingCounts.get(questionNumber) ?? 0;
     if (blankCount !== blanks.length) throw new HttpError(409, 'SOURCE_CHANGED', '講義填答位置與已匯入對應不一致，請重新匯入。');
     const targetLabels = blanks.map((blank) => `第 ${questionNumber} 題空格 ${blank.slotOrder + 1}`);
-    if (!result.winner) return { questionNumber, status: 'no_winner', blankCount, targetLabels };
+    const occupiedTargetLabels = blanks.flatMap((blank, index) => isSheetsCellBlank(grid.cells.find((cell) => cell.rowIndex === blank.rowIndex && cell.columnIndex === blank.columnIndex))
+      ? [] : [targetLabels[index]]);
+    if (!result.winner) return { questionNumber, status: 'no_winner', blankCount, targetLabels, occupiedTargetLabels };
     return {
       questionNumber,
       status: result.answerParts.length === blankCount ? 'ready' : 'part_count_mismatch',
       winningGroupName: result.winningGroupName,
       answerParts: result.answerParts,
       blankCount,
-      targetLabels
+      targetLabels,
+      occupiedTargetLabels
     };
   });
 

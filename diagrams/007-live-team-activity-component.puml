@@ -1,0 +1,27 @@
+@startuml
+title 小組即時狀態與回寫 - 元件圖
+actor 教師
+actor 學生
+component "教師活動畫面" as TeacherUI
+component "學生小組畫面" as StudentUI
+component "活動與小組狀態" as Activity
+component "組別、工作階段與答案服務" as TeamState
+database "SQLite" as DB
+component "WebSocket 訂閱與授權發布" as Realtime
+component "離線寬限期回收" as Expiry
+component "回寫預覽與全目標預檢" as Preview
+component "學習單" as Sheet
+教師 --> TeacherUI
+學生 --> StudentUI
+TeacherUI --> Activity
+StudentUI --> Activity
+Activity --> TeamState
+TeamState --> DB
+TeamState --> Realtime : commit 後發布 revision
+Expiry --> TeamState : 2 分鐘到期清除身分
+Realtime --> TeacherUI : 活動、小組及作答更新
+Realtime --> StudentUI : 本組成員及答案更新
+TeacherUI --> Preview
+Preview --> DB : 保存五分鐘預覽狀態
+Preview --> Sheet : 全部空白後格式化批次回寫
+@enduml

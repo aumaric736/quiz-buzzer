@@ -18,21 +18,25 @@ export interface AnswerSubmissionRequest {
 export interface AnswerSubmissionAck {
   accepted: true;
   questionNumber: number;
+  status?: 'accepted' | 'already_submitted';
+  answerParts?: string[];
 }
 
 export type TeacherQuestionStatus =
-  | { questionNumber: number; status: 'open' }
+  | { questionNumber: number; status: 'open'; submissions: [] }
   | {
       questionNumber: number;
       status: 'won';
       groupId: string;
       groupName: string;
       answerParts: string[];
+      submissions: Array<{ groupId: string; groupName: string; answerParts: string[]; submissionRank: number; isWinner: boolean }>;
     };
 
 export interface StudentOwnQuestionStatus {
   questionNumber: number;
   status: 'submitted';
+  answerParts?: string[];
 }
 
 export interface TeacherLiveAnswerStatusResponse {
@@ -55,6 +59,11 @@ export interface EndedAnswerStatusResponse {
   items: WinningAnswerResult[];
 }
 
+export interface PublicFinalResultsResponse {
+  phase: '已結束';
+  items: WinningAnswerResult[];
+}
+
 export type AnswerStatusResponse =
   | PreparingAnswerStatusResponse
   | TeacherLiveAnswerStatusResponse
@@ -65,9 +74,38 @@ export interface BuzzerQuestionUpdatedEvent {
   type: 'buzzer.question.updated';
   activityId: string;
   questionNumber: number;
-  status: 'won';
+  status: 'submitted' | 'won';
   groupId: string;
   groupName: string;
+  answerParts: string[];
+  submissionRank?: number;
+  isWinner?: boolean;
+}
+
+export interface TeamQuestionAnswerSnapshot {
+  questionNumber: number;
+  status: 'unanswered' | 'submitted';
+  answerParts?: string[];
+}
+
+export interface TeamAnswerUpdatedEvent {
+  type: 'team.answer.updated';
+  activityId: string;
+  groupId: string;
+  groupLiveRevision: number;
+  questionNumber: number;
+  status: 'submitted';
+  answerParts: string[];
+}
+
+export interface ActivityTeamAnswerUpdatedEvent {
+  type: 'activity.team-answer.updated';
+  activityId: string;
+  activityLiveRevision: number;
+  groupId: string;
+  groupName: string;
+  questionNumber: number;
+  status: 'submitted';
   answerParts: string[];
 }
 

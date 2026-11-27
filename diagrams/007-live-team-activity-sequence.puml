@@ -1,0 +1,43 @@
+@startuml
+title 小組即時狀態與回寫 - 序列圖
+actor 教師
+actor 學生
+participant "教師與學生畫面" as UI
+participant "活動狀態" as State
+participant "小組與作答服務" as Team
+participant "教師畫面" as Teacher
+participant "同組畫面" as Teammate
+participant "離線回收計時器" as Timer
+participant "學習單回寫" as Sheet
+學生 -> UI : 提交本組答案
+UI -> Team : 驗證並保存答案及遞增 revision
+Team --> UI : 提交成功
+Team -> Teacher : 活動範圍小組答案更新
+Team -> Teammate : 同組範圍答案更新
+學生 -> Timer : 連線中斷
+Timer -> Team : 在線數減少並保留席位
+alt 兩分鐘內恢復
+  學生 -> Team : 恢復原工作階段
+  Team -> Teacher : 發布恢復後名冊
+else 滿兩分鐘
+  Timer -> Team : 清除身分並釋出席位
+  alt 離線者為組長
+    Team -> Team : 關閉新成員加入
+  end
+  Team -> Teacher : 發布席位與加入狀態
+end
+教師 -> UI : 產生或更新回寫預覽
+UI -> Team : 讀取答案、映射與目標格
+Team --> UI : 五分鐘預覽及已佔用格標籤
+教師 -> UI : 確認回寫
+UI -> Team : 驗證期限並預檢所有目標格
+alt 預覽過期
+  Team --> UI : 提示重產預覽
+else 有非空白目標格
+  Team --> UI : 拒絕整批寫入並列出儲存格
+else 預覽有效且目標格全空白
+  Team -> Sheet : 寫入「小組：… 。回答：… 。」
+  Sheet --> State : 完成
+  Team --> UI : 顯示回寫完成
+end
+@enduml

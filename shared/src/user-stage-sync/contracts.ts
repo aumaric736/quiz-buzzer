@@ -10,6 +10,8 @@ export interface UserSession {
   activityId: string | null;
   groupId: string | null;
   groupName?: string | null;
+  groupRole?: 'leader' | 'member' | null;
+  groupInviteCode?: string | null;
 }
 
 export interface ActivitySnapshot {
@@ -22,6 +24,73 @@ export interface GroupRecord {
   groupId: string;
   activityId: string;
   displayName: string;
+  inviteCode?: string;
+  groupRole?: GroupRole;
+  groupLiveRevision?: number;
+  onlineCount?: number;
+  occupiedCount?: number;
+  capacity?: 2;
+  acceptsMembers?: boolean;
+}
+
+export type GroupRole = 'leader' | 'member';
+
+export interface LiveQuestionAnswerSnapshot {
+  questionNumber: number;
+  status: 'unanswered' | 'submitted';
+  answerParts?: string[];
+}
+
+export interface LiveGroupRosterRecord {
+  groupId: string;
+  displayName: string;
+  inviteCode?: string;
+  onlineCount: number;
+  occupiedCount: number;
+  capacity: 2;
+  acceptsMembers: boolean;
+  answers: LiveQuestionAnswerSnapshot[];
+}
+
+export interface TeacherActivityLiveSnapshot {
+  activityId: string;
+  activityLiveRevision: number;
+  groups: LiveGroupRosterRecord[];
+}
+
+export interface StudentTeamLiveSnapshot {
+  activityId: string;
+  groupId: string;
+  groupLiveRevision: number;
+  displayName: string;
+  groupRole: GroupRole;
+  onlineCount: number;
+  occupiedCount: number;
+  capacity: 2;
+  acceptsMembers: boolean;
+  answers: LiveQuestionAnswerSnapshot[];
+}
+
+export interface ActivityRosterUpdatedEvent extends TeacherActivityLiveSnapshot {
+  type: 'activity.roster.updated';
+}
+
+export interface TeamPresenceUpdatedEvent extends StudentTeamLiveSnapshot {
+  type: 'team.presence.updated';
+}
+
+export type GroupEnrollmentRequest =
+  | { mode: 'leader'; activityId: string; groupName: string }
+  | { mode: 'member'; activityId: string; inviteCode: string };
+
+export interface TeacherGroupRosterItem {
+  groupId: string;
+  inviteCode: string;
+  activeSessionCount: number;
+  onlineCount: number;
+  occupiedCount: number;
+  capacity: 2;
+  acceptsMembers: boolean;
 }
 
 export interface ApiErrorBody {

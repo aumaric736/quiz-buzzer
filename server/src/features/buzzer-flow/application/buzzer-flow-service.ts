@@ -18,7 +18,7 @@ export function validateAnswerSubmission(input: unknown): AnswerSubmissionReques
   return { questionNumber: input.questionNumber as number, answerParts: input.answerParts as string[] };
 }
 
-export function submitAnswer(db: SqliteDatabase, sessionId: string, activityId: string, input: unknown) {
+export function submitAnswer(db: SqliteDatabase, sessionId: string, activityId: string, input: unknown, receiptSequence?: number) {
   const request = validateAnswerSubmission(input);
-  return acceptAnswerSubmission(db, { sessionId, activityId, ...request });
+  return acceptAnswerSubmission(db, { sessionId, activityId, ...request, receiptSequence });
 }

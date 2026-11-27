@@ -28,7 +28,7 @@ describe('buzzer answer submission service', () => {
     throw new Error('Expected answer submission to be rejected.');
   }
 
-  it('accepts the first valid ordered answer and trims each part', () => {
+  it('accepts the first valid ordered answer and preserves each original part', () => {
     const fixture = setup();
     transitionActivity(db!, fixture.teacherId, fixture.activityId, '搶答進行中');
 
@@ -41,7 +41,7 @@ describe('buzzer answer submission service', () => {
       questionNumber: 1,
       groupId: fixture.groupA.groupId,
       groupName: 'Blue Team',
-      answerParts: ['first blank', 'second blank']
+      answerParts: ['  first blank  ', 'second blank']
     });
     expect(db!.prepare('SELECT COUNT(*) AS count FROM buzzer_submissions').get()).toEqual({ count: 1 });
   });
@@ -77,11 +77,13 @@ describe('buzzer answer submission service', () => {
     expect(db!.prepare('SELECT COUNT(*) AS count FROM buzzer_submissions').get()).toEqual({ count: 0 });
   });
 
-  it('rejects same-group retries and records later groups without changing the winner', () => {
+  it('returns the original receipt for exact retries, rejects changed retries, and records later groups', () => {
     const fixture = setup();
     transitionActivity(db!, fixture.teacherId, fixture.activityId, '搶答進行中');
     submitAnswer(db!, fixture.studentAId, fixture.activityId, { questionNumber: 1, answerParts: ['hidden one', 'hidden two'] });
 
+    const replay = submitAnswer(db!, fixture.studentAId, fixture.activityId, { questionNumber: 1, answerParts: ['hidden one', 'hidden two'] });
+    expect(replay).toMatchObject({ isWinner: true, isReplay: true, answerParts: ['hidden one', 'hidden two'] });
     expect(errorFrom(() => submitAnswer(db!, fixture.studentAId, fixture.activityId, { questionNumber: 1, answerParts: ['retry one', 'retry two'] })))
       .toMatchObject({ status: 409, code: 'DUPLICATE_SUBMISSION' });
     const later = submitAnswer(db!, fixture.studentBId, fixture.activityId, { questionNumber: 1, answerParts: ['other one', 'other two'] });

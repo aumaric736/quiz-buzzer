@@ -15,7 +15,7 @@ import { answerStatusRoutes } from './features/user-stage-sync/api/answer-status
 import { answerAttemptCheckRoutes } from './features/user-stage-sync/api/answer-attempt-check-routes.js';
 import { buzzerFlowRoutes } from './features/buzzer-flow/api/buzzer-flow-routes.js';
 import { resultsReviewRoutes } from './features/results-review/api/results-review-routes.js';
-import { attachActivitySubscriptions } from './features/user-stage-sync/realtime/websocket-server.js';
+import { attachActivitySubscriptions, type ActivityLivePublishers } from './features/user-stage-sync/realtime/websocket-server.js';
 import type { ActivityPhaseUpdatedEvent } from '@quiz-buzzer/shared';
 import type { BuzzerQuestionUpdatedEvent } from '@quiz-buzzer/shared';
 import { GoogleSheetsGateway } from './features/guided-notes/google-sheets/google-sheets-gateway.js';
@@ -23,11 +23,19 @@ import { guidedNotesRoutes } from './features/guided-notes/api/guided-notes-rout
 import type { WinningAnswerProvider } from '@quiz-buzzer/shared';
 import type { SheetsGateway } from './features/guided-notes/google-sheets/sheets-gateway.js';
 import { createWinningAnswerProvider } from './features/buzzer-flow/application/winning-answer-provider.js';
+import { configureStudentPresencePublisher, reconcileExpiredStudentSessions, schedulePendingStudentExpirations } from './features/user-stage-sync/application/student-session-presence-service.js';
+import { reconcileExpiredTeacherPresence, schedulePendingTeacherPresence } from './features/user-stage-sync/application/teacher-presence-service.js';
+import { finalResultsRoutes } from './features/buzzer-flow/api/final-results-routes.js';
+import { configureTeacherEndPublisher } from './features/user-stage-sync/application/teacher-presence-service.js';
+import { teacherRoutes } from './features/user-stage-sync/api/teacher-routes.js';
+import type { TeacherCredentials } from './features/user-stage-sync/application/teacher-auth-service.js';
 
 export interface AppDependencies {
   sheetsGateway?: SheetsGateway;
   winningAnswerProvider?: WinningAnswerProvider;
   publishBuzzerQuestion?: (event: BuzzerQuestionUpdatedEvent) => void;
+  liveActivityPublishers?: ActivityLivePublishers;
+  teacherCredentials?: TeacherCredentials | null;
 }
 
 export function createApp(
@@ -51,12 +59,14 @@ export function createApp(
   });
   app.use(express.json({ limit: '16kb', strict: false }));
   app.get('/health', (_request, response) => response.json({ status: 'ok' }));
-  app.use(sessionRoutes(db));
+  app.use(teacherRoutes(db, dependencies.teacherCredentials ?? null));
+  app.use(sessionRoutes(db, publishPhase));
   app.use(activityRoutes(db, publishPhase));
-  app.use(groupRoutes(db));
+  app.use(groupRoutes(db, dependencies.liveActivityPublishers));
   app.use(answerStatusRoutes(db));
   app.use(answerAttemptCheckRoutes(db));
-  app.use(buzzerFlowRoutes(db, dependencies.publishBuzzerQuestion));
+  app.use(buzzerFlowRoutes(db, dependencies.publishBuzzerQuestion, dependencies.liveActivityPublishers?.publishTeamAnswer));
+  app.use(finalResultsRoutes(db));
   app.use(resultsReviewRoutes(db));
   app.use(guidedNotesRoutes(db, dependencies.sheetsGateway ?? new GoogleSheetsGateway(), dependencies.winningAnswerProvider ?? createWinningAnswerProvider(db)));
   app.use(errorMiddleware);
@@ -67,7 +77,12 @@ export function createHttpServer(db: SqliteDatabase, config: AppConfig, dependen
   const server = createServer();
   const sockets = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
   const publishers = attachActivitySubscriptions(sockets, db);
-  server.on('request', createApp(db, config.clientOrigin, publishers.publishPhase, { ...dependencies, publishBuzzerQuestion: publishers.publishBuzzerQuestion }));
+  configureTeacherEndPublisher(publishers.publishPhase);
+  const clearStudentPresencePublisher = configureStudentPresencePublisher(publishers.publishTeamPresence, publishers.publishRoster);
+  server.once('close', clearStudentPresencePublisher);
+  server.on('request', createApp(db, config.clientOrigin, publishers.publishPhase, { ...dependencies, liveActivityPublishers: publishers,
+    publishBuzzerQuestion: publishers.publishBuzzerQuestion,
+    teacherCredentials: { username: config.teacherUsername, password: config.teacherPassword } }));
   return { server, sockets };
 }
 
@@ -75,6 +90,10 @@ export function startServer(config: AppConfig = loadConfig(), dependencies: AppD
   const absoluteDbPath = config.databasePath === ':memory:' ? config.databasePath : resolve(process.cwd(), config.databasePath);
   if (absoluteDbPath !== ':memory:') mkdirSync(dirname(absoluteDbPath), { recursive: true });
   const db = openDatabase(absoluteDbPath);
+  reconcileExpiredStudentSessions(db);
+  schedulePendingStudentExpirations(db);
+  reconcileExpiredTeacherPresence(db);
+  schedulePendingTeacherPresence(db);
   const { server } = createHttpServer(db, config, dependencies);
   server.listen(config.port, config.host, () => log('info', 'service_started', { port: config.port }));
   server.on('close', () => db.close());

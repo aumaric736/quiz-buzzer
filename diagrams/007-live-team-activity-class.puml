@@ -1,0 +1,72 @@
+@startuml
+title 小組即時狀態與回寫 - 類別圖
+class Activity {
+  status
+  activityLiveRevision (teacher only)
+  publishTeacherRoster()
+}
+class Team {
+  capacity = 2
+  acceptsNewMembers
+  groupLiveRevision (team scoped)
+}
+class MemberSession {
+  role
+  connectionState
+  disconnectDeadline
+  valid
+  retiredAt
+}
+class TeamAnswer {
+  question
+  answerParts
+  answered
+  incrementsTeamAndActivityRevision()
+}
+class PresenceService {
+  markDisconnected()
+  restoreBeforeDeadline()
+  expireAndReleaseSeat()
+}
+class RealtimePublisher {
+  publishTeacherRoster()
+  publishTeamPresence()
+  publishTeamAnswer()
+}
+class WritebackPreview {
+  createdAt
+  expiresAt
+  targetCells
+  occupiedTargetLabels
+}
+class TargetCell {
+  currentValue
+  proposedValue
+}
+Activity "1" -- "0..100" Team
+Team "1" -- "1..2" MemberSession
+Team "1" -- "0..*" TeamAnswer
+PresenceService --> MemberSession
+PresenceService --> Team
+PresenceService --> Activity
+RealtimePublisher ..> Activity
+RealtimePublisher ..> Team
+RealtimePublisher ..> TeamAnswer
+Activity "1" -- "0..1" WritebackPreview
+WritebackPreview "1" -- "1..*" TargetCell
+note right of MemberSession
+  Offline for two minutes:
+  invalidate and clear session.
+  Leader expiry closes team to new members.
+end note
+note right of Team
+  onlineCount excludes disconnected sessions.
+  occupiedCount retains a seat through grace period.
+end note
+note right of WritebackPreview
+  Valid for five minutes.
+  All target cells must be blank
+  (including formula cells) before
+  a batch write occurs.
+end note
+@enduml
