@@ -23,11 +23,10 @@ export function TeacherGroupRoster({ sessionId, activityId, liveGroups }: { sess
     {roster.length === 0 ? <p className="mt-2 text-sm text-slate-500">目前尚無小組。</p> : <ul className="mt-3 divide-y divide-slate-100">{roster.map((item) => {
       const available = item.joinStatus === '開放加入';
       const full = item.joinStatus === '額滿';
-      return <li key={item.groupId} className="grid grid-cols-[minmax(0,1fr)_5rem_7rem_7rem] items-center gap-3 py-3 text-sm">
+      return <li key={item.groupId} className="grid grid-cols-[2fr_1fr_1fr] items-center gap-3 py-3 text-sm">
         <span className="min-w-0 break-words">{item.displayName} <span className="font-mono tracking-wider">({item.inviteCode})</span></span>
-        <span className="text-center tabular-nums">{item.onlineCount} 人在線</span>
-        <span className={`text-center ${item.leaderOnline ? 'text-emerald-700' : 'text-slate-500'}`}>組長{item.leaderOnline ? '在線' : '離線'}</span>
-        <span className={`text-center ${available ? 'text-emerald-700' : full ? 'text-amber-700' : 'text-slate-500'}`}>{item.joinStatus}</span>
+        <span className="min-w-0 text-center tabular-nums">{item.onlineCount} 人在線</span>
+        <span className={`min-w-0 text-center ${available ? 'text-emerald-700' : full ? 'text-amber-700' : 'text-slate-500'}`}>{item.joinStatus}</span>
         <span className="w-full text-xs text-slate-600">{item.answers.filter((answer) => answer.status === 'submitted').map((answer) => `第 ${answer.questionNumber} 題：${answer.answerParts?.join('、') ?? ''}`).join('；')}</span>
       </li>;
     })}</ul>}

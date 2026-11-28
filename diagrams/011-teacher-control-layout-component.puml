@@ -1,0 +1,32 @@
+@startuml
+title Teacher Control Layout - Components
+actor Teacher
+rectangle "Teacher Interface" {
+  component "Team Information View" as TeamView
+  component "Activity Controls" as Controls
+  component "Question Progress View" as Progress
+}
+Teacher --> TeamView : reviews teams
+Teacher --> Controls : starts / ends answering
+Teacher --> Progress : reviews live progress
+note right of TeamView
+Leader online/offline field omitted.
+Distribute available roster width by
+column weights: group name/code = 2;
+online count = 1; join status = 1.
+Answer summary remains on its next row,
+outside the weighted columns.
+Do not add replacement content.
+end note
+note right of Controls
+After start: hide both start controls;
+show end control at former start-join position.
+After end: keep end control visible,
+but unavailable.
+end note
+note right of Progress
+Display question tiles in rows of four.
+Each tile occupies 1/4 of available width.
+Leave unused slots in the final row blank.
+end note
+@enduml

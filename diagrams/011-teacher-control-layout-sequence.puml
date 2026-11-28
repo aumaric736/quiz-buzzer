@@ -1,0 +1,15 @@
+@startuml
+title Teacher Control Layout - Activity Control Sequence
+actor Teacher
+participant "Teacher Interface" as UI
+participant "Activity" as Activity
+Teacher -> UI : select 「開始答題」
+UI -> Activity : start answering
+Activity --> UI : answering state
+UI --> Teacher : hide join/start; show end at former join position
+UI --> Teacher : show progress tiles in four quarter-width slots per row
+Teacher -> UI : select 「結束答題」
+UI -> Activity : end answering
+Activity --> UI : ended state
+UI --> Teacher : keep end visible and unavailable
+@enduml

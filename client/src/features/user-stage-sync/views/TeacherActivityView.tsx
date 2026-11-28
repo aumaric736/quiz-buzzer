@@ -104,10 +104,14 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
       <ActivityPhaseStatus sessionId={session.sessionId} activity={activity} onUpdate={setActivity} onReconnect={() => void refreshAnswerStatus()} onBuzzerUpdate={handleBuzzerUpdate} onLiveEvent={handleLiveEvent} />
       <p className="mt-3 text-sm text-slate-600">搶答不設倒數，會持續進行直到老師手動結束。</p>
       <div className="mt-5 flex flex-wrap gap-3">
-        <button type="button" className="rounded-xl border border-indigo-300 px-5 py-3 font-semibold text-indigo-800 disabled:opacity-50" disabled={busy || activity.phase !== '準備中' || Boolean(activity.joiningOpenedAt)} onClick={() => void run(() => openActivityJoining(session.sessionId, activity.activityId))}>開始加入</button>
-        <button type="button" className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50" disabled={busy || activity.phase !== '準備中' || !activity.joiningOpenedAt} onClick={() => void run(() => changeActivityPhase(session.sessionId, activity.activityId, '搶答進行中'))}>開始答題</button>
+        {activity.phase === '準備中' ? <>
+          <button type="button" className="rounded-xl border border-indigo-300 px-5 py-3 font-semibold text-indigo-800 disabled:opacity-50" disabled={busy || Boolean(activity.joiningOpenedAt)} onClick={() => void run(() => openActivityJoining(session.sessionId, activity.activityId))}>開始加入</button>
+          <button type="button" className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50" disabled={busy || !activity.joiningOpenedAt} onClick={() => void run(() => changeActivityPhase(session.sessionId, activity.activityId, '搶答進行中'))}>開始答題</button>
+        </> : <button type="button" className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50" disabled={busy || activity.phase !== '搶答進行中'} onClick={() => {
+          const phase = nextPhase[activity.phase];
+          if (phase) void run(() => changeActivityPhase(session.sessionId, activity.activityId, phase));
+        }}>{busy ? '更新中…' : '結束答題'}</button>}
       </div>
-      {nextPhase[activity.phase] && <button className="mt-5 rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50" disabled={busy} onClick={() => void run(() => changeActivityPhase(session.sessionId, activity.activityId, nextPhase[activity.phase]!))}>{busy ? '更新中…' : '結束活動'}</button>}
       <GuidedNotesImportView session={session} activityId={activity.activityId} locked={activity.phase !== '準備中' || Boolean(activity.joiningOpenedAt)} />
       {activity.phase === '搶答進行中' && <QuestionAnswerProgress questions={teacherProgress} />}
       {activity.phase === '已結束' && <QuestionResultList items={answerItems} />}

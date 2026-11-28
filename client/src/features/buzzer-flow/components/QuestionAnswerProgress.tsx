@@ -10,10 +10,10 @@ export function QuestionAnswerProgress({ questions }: QuestionAnswerProgressProp
   const selected = ordered.find((question) => question.questionNumber === selectedNumber) ?? ordered[0]!;
   return <section className="mt-6 rounded-2xl border border-slate-200 p-5" aria-label="各題作答進度">
     <h3 className="text-lg font-semibold">各題作答進度</h3>
-    <div className="mt-3 flex flex-wrap gap-2" aria-label="選擇題目">
+    <div className="mt-3 grid grid-cols-4" aria-label="選擇題目">
       {ordered.map((question) => <button key={question.questionNumber} type="button"
         aria-pressed={selected.questionNumber === question.questionNumber}
-        className={`rounded-lg border px-3 py-2 text-left text-sm ${selected.questionNumber === question.questionNumber ? 'border-indigo-500 bg-indigo-50 text-indigo-950' : 'border-slate-300 text-slate-700'}`}
+        className={`w-full min-w-0 rounded-lg border px-3 py-2 text-left text-sm ${selected.questionNumber === question.questionNumber ? 'border-indigo-500 bg-indigo-50 text-indigo-950' : 'border-slate-300 text-slate-700'}`}
         onClick={() => setSelectedNumber(question.questionNumber)}>
         <span className="block font-medium">第 {question.questionNumber} 題</span>
         <span className="block">{question.answeredGroupCount} / {question.totalGroupCount} 組已作答</span>

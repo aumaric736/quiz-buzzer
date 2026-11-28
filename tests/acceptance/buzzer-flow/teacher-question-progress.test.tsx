@@ -22,4 +22,28 @@ describe('teacher live question progress acceptance', () => {
     expect(html).toContain('第 2 順位');
     expect(html).toContain('Offline Team');
   });
+
+  it('keeps each question in one of four fixed-width slots per row', () => {
+    for (const questionCount of [1, 4, 5, 8]) {
+      const questions: TeacherQuestionProgress[] = Array.from({ length: questionCount }, (_, index) => ({
+        questionNumber: index + 1,
+        displayOrder: index,
+        answeredGroupCount: 0,
+        totalGroupCount: 1,
+        answeredGroups: [],
+        unansweredGroups: []
+      }));
+      const html = renderToStaticMarkup(<QuestionAnswerProgress questions={questions} />);
+      const picker = html.match(/<div class="mt-3 grid grid-cols-4" aria-label="選擇題目">([\s\S]*?)<\/div>/);
+      const buttons = picker?.[1].match(/<button\b[^>]*>/g) ?? [];
+
+      expect(picker).not.toBeNull();
+      expect(buttons).toHaveLength(questionCount);
+      expect(buttons.every((button) => button.includes('w-full'))).toBe(true);
+      expect(Math.ceil(buttons.length / 4)).toBe(Math.ceil(questionCount / 4));
+    }
+
+    const empty = renderToStaticMarkup(<QuestionAnswerProgress questions={[]} />);
+    expect(empty).toContain('尚無可檢視的題目。');
+  });
 });
