@@ -1,100 +1,64 @@
 import { describe, expect, it } from 'vitest';
 import { createActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
-import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
-import { configureStudentPresencePublisher, markStudentDisconnected, reconcileExpiredStudentSessions, restoreStudentPresence } from '../../../server/src/features/user-stage-sync/application/student-session-presence-service.js';
+import { createSession, getSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
+import { markStudentDisconnected, reconcileExpiredStudentSessions, restoreStudentPresence } from '../../../server/src/features/user-stage-sync/application/student-session-presence-service.js';
 import { listGroupRoster } from '../../../server/src/features/user-stage-sync/persistence/group-repository.js';
-import { createTestDatabase } from '../../helpers/sqlite.js';
+import { configureStudentPresencePublisher } from '../../../server/src/features/user-stage-sync/application/student-session-presence-service.js';
+import { createTestDatabase, enrollGroupForTest } from '../../helpers/sqlite.js';
 
-describe('team session expiry', () => {
-  it('retires an expired leader, closes the group at the deadline, publishes both snapshots, and rejects a same-deadline join', () => {
+describe('student reconnect retention', () => {
+  it('keeps a cleanly disconnected session and its original group recoverable without a deadline', () => {
     const db = createTestDatabase();
-    const notifications: string[] = [];
-    const clear = configureStudentPresencePublisher((activityId, groupId) => notifications.push(`team:${activityId}:${groupId}`), (activityId) => notifications.push(`teacher:${activityId}`));
     try {
       const teacherId = createSession(db, 'teacher').sessionId;
       const activityId = createActivity(db, teacherId).activityId;
       const leaderId = createSession(db, 'student').sessionId;
-      const group = enrollGroup(db, leaderId, activityId, { mode: 'leader', groupName: 'Closing Team' });
-      const memberId = createSession(db, 'student').sessionId;
-      enrollGroup(db, memberId, activityId, { mode: 'member', inviteCode: group.inviteCode });
-      const joinedAt = new Date(Date.now() + 60_000);
-      markStudentDisconnected(db, leaderId, joinedAt);
-      expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 1, occupiedCount: 2, acceptsMembers: true });
-      expect(restoreStudentPresence(db, leaderId, new Date(joinedAt.getTime() + 119_999))).toBe(true);
-      const secondDisconnect = new Date(Date.now() + 60_000);
-      markStudentDisconnected(db, leaderId, secondDisconnect);
-      expect(reconcileExpiredStudentSessions(db, new Date(secondDisconnect.getTime() + 120_000))).toBe(1);
-      expect(restoreStudentPresence(db, leaderId, new Date(secondDisconnect.getTime() + 120_000))).toBe(false);
-      expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 1, occupiedCount: 1, acceptsMembers: false });
+      const group = enrollGroupForTest(db, leaderId, activityId, { mode: 'leader', groupName: 'Persistent Team' });
 
-      const newcomer = createSession(db, 'student').sessionId;
-      expect(() => enrollGroup(db, newcomer, activityId, { mode: 'member', inviteCode: group.inviteCode })).toThrow(/找不到可加入/);
-      expect(db.prepare('SELECT activity_id AS activityId, group_id AS groupId, retired_at AS retiredAt FROM user_sessions WHERE id = ?').get(leaderId))
-        .toMatchObject({ activityId: null, groupId: null, retiredAt: expect.any(String) });
-      expect(notifications.filter((item) => item.startsWith('team:'))).toHaveLength(4);
-      expect(notifications.filter((item) => item.startsWith('teacher:'))).toHaveLength(4);
-    } finally { clear(); db.close(); }
+      markStudentDisconnected(db, leaderId, new Date('2026-01-01T00:00:00.000Z'));
+      expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 0 });
+      expect(reconcileExpiredStudentSessions(db, new Date('2036-01-01T00:00:00.000Z'))).toBe(0);
+      expect(restoreStudentPresence(db, leaderId, new Date('2036-01-01T00:00:00.000Z'))).toBe(true);
+      expect(getSession(db, leaderId)).toMatchObject({ activityId, groupId: group.groupId, groupRole: 'leader' });
+      expect(db.prepare('SELECT retired_at AS retiredAt, disconnected_at AS disconnectedAt FROM user_sessions WHERE id = ?').get(leaderId))
+        .toEqual({ retiredAt: null, disconnectedAt: null });
+    } finally { db.close(); }
   });
 
-  it('commits a leader expiry before rejecting a join submitted at its deadline', () => {
+  it('migrates a legacy disconnected_until row to offline presence without retiring or detaching it', () => {
+    const db = createTestDatabase();
+    try {
+      const teacherId = createSession(db, 'teacher').sessionId;
+      const activityId = createActivity(db, teacherId).activityId;
+      const studentId = createSession(db, 'student').sessionId;
+      const group = enrollGroupForTest(db, studentId, activityId, { mode: 'leader', groupName: 'Legacy Team' });
+      db.prepare('UPDATE user_sessions SET disconnected_until = ?, updated_at = ? WHERE id = ?')
+        .run('2026-01-01T00:02:00.000Z', '2026-01-01T00:00:00.000Z', studentId);
+
+      expect(reconcileExpiredStudentSessions(db, new Date('2026-01-01T00:03:00.000Z'))).toBe(1);
+      expect(db.prepare(`SELECT disconnected_at AS disconnectedAt, disconnected_until AS oldDeadline,
+        activity_id AS activityId, group_id AS groupId, retired_at AS retiredAt FROM user_sessions WHERE id = ?`).get(studentId))
+        .toEqual({ disconnectedAt: '2026-01-01T00:00:00.000Z', oldDeadline: null, activityId, groupId: group.groupId, retiredAt: null });
+      expect(restoreStudentPresence(db, studentId, new Date('2036-01-01T00:00:00.000Z'))).toBe(true);
+    } finally { db.close(); }
+  });
+
+  it('publishes leader online-count changes to the team and teacher after commit', () => {
     const db = createTestDatabase();
     const notifications: string[] = [];
-    const clear = configureStudentPresencePublisher((activityId, groupId) => notifications.push(`team:${activityId}:${groupId}`), (activityId) => notifications.push(`teacher:${activityId}`));
+    const clear = configureStudentPresencePublisher((activityId, groupId) => notifications.push(`team:${activityId}:${groupId}`),
+      (activityId) => notifications.push(`teacher:${activityId}`));
     try {
       const teacherId = createSession(db, 'teacher').sessionId;
       const activityId = createActivity(db, teacherId).activityId;
       const leaderId = createSession(db, 'student').sessionId;
-      const group = enrollGroup(db, leaderId, activityId, { mode: 'leader', groupName: 'Deadline Team' });
-      const deadline = new Date(Date.now()).toISOString();
-      db.prepare('UPDATE user_sessions SET disconnected_until = ? WHERE id = ?').run(deadline, leaderId);
-      const newcomerId = createSession(db, 'student').sessionId;
-
-      expect(() => enrollGroup(db, newcomerId, activityId, { mode: 'member', inviteCode: group.inviteCode })).toThrow(/找不到可加入/);
-      expect(db.prepare('SELECT accepts_members AS acceptsMembers FROM groups WHERE id = ?').get(group.groupId)).toEqual({ acceptsMembers: 0 });
-      expect(db.prepare('SELECT group_id AS groupId, retired_at AS retiredAt FROM user_sessions WHERE id = ?').get(leaderId))
-        .toMatchObject({ groupId: null, retiredAt: expect.any(String) });
-      expect(notifications).toContain(`team:${activityId}:${group.groupId}`);
-      expect(notifications).toContain(`teacher:${activityId}`);
-    } finally { clear(); db.close(); }
-  });
-
-  it('publishes team and teacher snapshots for every activity when a successful join triggers expiry reconciliation', () => {
-    const db = createTestDatabase();
-    const notifications: string[] = [];
-    const clear = configureStudentPresencePublisher((activityId, groupId) => notifications.push(`team:${activityId}:${groupId}`), (activityId) => notifications.push(`teacher:${activityId}`));
-    try {
-      const teacherA = createSession(db, 'teacher').sessionId;
-      const activityA = createActivity(db, teacherA).activityId;
-      const expiringLeader = createSession(db, 'student').sessionId;
-      const closedGroup = enrollGroup(db, expiringLeader, activityA, { mode: 'leader', groupName: 'Expired Leader Team' });
-      const activeMateA = createSession(db, 'student').sessionId;
-      enrollGroup(db, activeMateA, activityA, { mode: 'member', inviteCode: closedGroup.inviteCode });
-
-      const teacherB = createSession(db, 'teacher').sessionId;
-      const activityB = createActivity(db, teacherB).activityId;
-      const activeLeaderB = createSession(db, 'student').sessionId;
-      const openGroup = enrollGroup(db, activeLeaderB, activityB, { mode: 'leader', groupName: 'Expired Member Team' });
-      const expiringMember = createSession(db, 'student').sessionId;
-      enrollGroup(db, expiringMember, activityB, { mode: 'member', inviteCode: openGroup.inviteCode });
-
-      const triggerLeader = createSession(db, 'student').sessionId;
-      const triggerGroup = enrollGroup(db, triggerLeader, activityA, { mode: 'leader', groupName: 'Trigger Team' });
+      const group = enrollGroupForTest(db, leaderId, activityId, { mode: 'leader', groupName: 'Count Team' });
       notifications.length = 0;
-      const deadline = new Date(Date.now() - 1).toISOString();
-      db.prepare('UPDATE user_sessions SET disconnected_until = ? WHERE id = ?').run(deadline, expiringLeader);
-      db.prepare('UPDATE user_sessions SET disconnected_until = ? WHERE id = ?').run(deadline, expiringMember);
-      const joiningMember = createSession(db, 'student').sessionId;
 
-      enrollGroup(db, joiningMember, activityA, { mode: 'member', inviteCode: triggerGroup.inviteCode });
+      markStudentDisconnected(db, leaderId);
 
-      expect(db.prepare('SELECT accepts_members AS acceptsMembers FROM groups WHERE id = ?').get(closedGroup.groupId)).toEqual({ acceptsMembers: 0 });
-      expect(db.prepare('SELECT group_id AS groupId FROM user_sessions WHERE id = ?').get(expiringLeader)).toEqual({ groupId: null });
-      expect(db.prepare('SELECT group_id AS groupId FROM user_sessions WHERE id = ?').get(expiringMember)).toEqual({ groupId: null });
-      expect(notifications).toContain(`team:${activityA}:${closedGroup.groupId}`);
-      expect(notifications).toContain(`teacher:${activityA}`);
-      expect(notifications).toContain(`team:${activityB}:${openGroup.groupId}`);
-      expect(notifications).toContain(`teacher:${activityB}`);
+      expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 0 });
+      expect(notifications).toEqual([`team:${activityId}:${group.groupId}`, `teacher:${activityId}`]);
     } finally { clear(); db.close(); }
   });
 });

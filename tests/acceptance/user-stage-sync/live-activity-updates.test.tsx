@@ -9,11 +9,13 @@ describe('live activity update acceptance', () => {
     const startedAt = performance.now();
     const markup = renderToStaticMarkup(createElement(TeacherGroupRoster, {
       sessionId: 'teacher', activityId: 'activity', liveGroups: [{ groupId: 'g1', displayName: '蘋果', inviteCode: '123456',
-        onlineCount: 2, occupiedCount: 2, capacity: 2, acceptsMembers: true,
-        answers: [{ questionNumber: 1, status: 'submitted', answerParts: ['中央處理器'] }] }]
+        onlineCount: 2, joinStatus: '額滿',
+        answers: [{ questionNumber: 1, displayOrder: 0, status: 'submitted', answerParts: ['中央處理器'] }] }]
     }));
     expect(markup).toContain('蘋果');
-    expect(markup).toContain('2/2 人在線');
+    expect(markup).toContain('2 人在線');
+    expect(markup).toContain('額滿');
+    expect(markup).not.toContain('使用中席位');
     expect(markup).toContain('第 1 題：中央處理器');
     expect(performance.now() - startedAt).toBeLessThan(2000);
   });

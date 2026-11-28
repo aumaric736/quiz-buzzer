@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createWinningAnswerProvider } from '../../../server/src/features/buzzer-flow/application/winning-answer-provider.js';
 import { createActivity, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
 import { submitAnswer } from '../../../server/src/features/buzzer-flow/application/buzzer-flow-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
+import { enrollGroupForTest as enrollGroup } from '../../helpers/sqlite.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';

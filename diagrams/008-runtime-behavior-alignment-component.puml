@@ -1,0 +1,29 @@
+@startuml
+title 小組加入、即時作答檢視與學習單匯入 - Component
+left to right direction
+actor Student
+actor Teacher
+rectangle "Quiz Buzzer" {
+  component "React Activity UI" as UI
+  component "Guided Notes Import" as Importer
+  component "Activity / Group Services" as Activity
+  component "Buzzer Flow / Progress Query" as Buzzer
+  component "SQLite Repositories" as DB
+  component "Authenticated WebSocket + Presence Monitor" as Live
+  component "Feature 004 Result Review" as Results
+}
+Teacher --> UI : import / edit, open joining, view roster/progress
+Student --> UI : join / reconnect / answer
+UI --> Importer : import or replace before joining opens
+Importer --> DB : validate and atomically save complete question set
+UI --> Activity : explicit open-joining action / join / recovery
+Activity --> DB : phase, readiness, opening marker, presence, roster
+Activity --> Live : publish committed phase/roster revisions
+UI --> Buzzer : submit / request teacher question progress
+Buzzer --> DB : valid answer, rank, per-question progress
+Buzzer --> Live : publish committed teacher/team answer state
+Live --> UI : role-scoped roster (including full state) and answer updates
+UI --> UI : keep existing student team-formation display
+Student --> Results : ended read-only result review if authorized
+Teacher --> Results : ended result review
+@enduml

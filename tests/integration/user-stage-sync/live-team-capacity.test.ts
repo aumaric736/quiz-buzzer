@@ -5,10 +5,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ActivityRosterUpdatedEvent, ActivityTeamAnswerUpdatedEvent, LiveGroupRosterRecord, StudentOwnQuestionStatus, TeamAnswerUpdatedEvent, TeamPresenceUpdatedEvent } from '@quiz-buzzer/shared';
 import { createHttpServer } from '../../../server/src/app.js';
-import { createActivity, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
+import { createActivity, openActivityJoining, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
+import { enrollGroupForTest as enrollGroup } from '../../helpers/sqlite.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
-import { expireStudentSession } from '../../../server/src/features/user-stage-sync/application/student-session-presence-service.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { GroupPresenceStatus } from '../../../client/src/features/user-stage-sync/components/GroupPresenceStatus.js';
 import { TeacherGroupRoster } from '../../../client/src/features/user-stage-sync/components/TeacherGroupRoster.js';
@@ -33,6 +32,7 @@ describe('live team activity capacity', () => {
     teacherId = createSession(db, 'teacher').sessionId;
     activityId = createActivity(db, teacherId).activityId;
     seedGuidedNotesQuestions(db, activityId, [1]);
+    openActivityJoining(db, teacherId, activityId);
     const created = createHttpServer(db, config); server = created.server;
     server.listen(0, '127.0.0.1');
     await new Promise<void>((resolve) => server.once('listening', resolve));
@@ -123,22 +123,22 @@ describe('live team activity capacity', () => {
     const memberRecord = await joinResponse.json() as { groupId: string };
     expect(memberRecord.groupId).toBe(newGroup.groupId);
     teacherMarkup = await receiveTeacherRoster(joinEventAt);
-    expect(teacherGroups!.find((group) => group.groupId === newGroup.groupId)).toMatchObject({ onlineCount: 2, occupiedCount: 2 });
+    expect(teacherGroups!.find((group) => group.groupId === newGroup.groupId)).toMatchObject({ onlineCount: 2, joinStatus: '額滿' });
     const joinedPresence = JSON.parse(await leaderPresenceEvent) as TeamPresenceUpdatedEvent;
     const leaderState = studentStates.get(newLeaderId)!;
     studentStates.set(newLeaderId, { presence: applyStudentPresenceEvent(joinedPresence), answers: applyStudentAnswerEvent(leaderState.answers, joinedPresence) });
     const memberPresence = await subscribe(newMemberId) as unknown as TeamPresenceUpdatedEvent;
     studentStates.set(newMemberId, { presence: memberPresence, answers: applyStudentAnswerEvent(null, memberPresence) });
-    expect(teacherMarkup).toContain('2/2 人在線');
+    expect(teacherMarkup).toContain('2 人在線');
     expect(renderPresence(newLeaderId)).toContain('組長');
     expect(renderPresence(newLeaderId)).toContain('2/2（已滿額）');
     expect(renderPresence(newMemberId)).toContain('組員');
 
-    // A real socket disconnect publishes online count 1/2 while retaining the seat.
+    // A clean WebSocket close immediately publishes the lower online count while retaining membership.
     const leaderPresenceOnDisconnect = harness.nextMessage(sockets.get(newLeaderId)!);
     const teacherOnDisconnect = harness.nextMessage(sockets.get(teacherId)!);
     const disconnectAt = performance.now();
-    sockets.get(newMemberId)!.terminate();
+    sockets.get(newMemberId)!.close(1000);
     const [disconnectPresence, disconnectRoster] = await Promise.all([leaderPresenceOnDisconnect, teacherOnDisconnect]);
     const offlinePresence = JSON.parse(disconnectPresence) as TeamPresenceUpdatedEvent;
     const disconnectedRoster = JSON.parse(disconnectRoster) as ActivityRosterUpdatedEvent;
@@ -147,35 +147,24 @@ describe('live team activity capacity', () => {
     teacherGroups = applyTeacherLiveEvent(teacherGroups, disconnectedRoster);
     teacherMarkup = renderTeacher();
     expect(renderPresence(newLeaderId)).toContain('1/2');
-    expect(teacherGroups!.find((group) => group.groupId === newGroup.groupId)).toMatchObject({ onlineCount: 1, occupiedCount: 2 });
-    expect(teacherMarkup).toContain('1/2 人在線');
+    expect(teacherGroups!.find((group) => group.groupId === newGroup.groupId)).toMatchObject({ onlineCount: 1, joinStatus: '開放加入' });
+    expect(teacherMarkup).toContain('1 人在線');
     expect(performance.now() - disconnectAt).toBeLessThan(2000);
 
-    // Expiry releases the reserved seat and feeds the same teacher and student state transitions.
-    const groupMemberPresence = harness.nextMessage(sockets.get(newLeaderId)!);
-    const teacherOnExpiry = harness.nextMessage(sockets.get(teacherId)!);
-    const expiryRow = db.prepare('SELECT disconnected_until AS deadline FROM user_sessions WHERE id = ?').get(newMemberId) as { deadline: string };
-    const expiryAt = performance.now();
-    expireStudentSession(db, newMemberId, new Date(expiryRow.deadline));
-    expect(db.prepare('SELECT group_id AS groupId, retired_at AS retiredAt FROM user_sessions WHERE id = ?').get(newMemberId))
-      .toMatchObject({ groupId: null, retiredAt: expect.any(String) });
+    expect(db.prepare('SELECT group_id AS groupId, retired_at AS retiredAt, disconnected_at AS disconnectedAt FROM user_sessions WHERE id = ?').get(newMemberId))
+      .toMatchObject({ groupId: newGroup.groupId, retiredAt: null, disconnectedAt: expect.any(String) });
     expect(db.prepare("SELECT count(*) AS occupied FROM user_sessions WHERE group_id = ? AND role = 'student' AND retired_at IS NULL").get(newGroup.groupId))
-      .toEqual({ occupied: 1 });
-    const [expiredPresenceMessage, expiredRosterMessage] = await Promise.all([groupMemberPresence, teacherOnExpiry]);
-    const expiredPresence = JSON.parse(expiredPresenceMessage) as TeamPresenceUpdatedEvent;
-    const expiredRoster = JSON.parse(expiredRosterMessage) as ActivityRosterUpdatedEvent;
-    expect(expiredRoster.groups.find((group) => group.groupId === newGroup.groupId)).toMatchObject({ onlineCount: 1, occupiedCount: 1 });
-    const leaderBeforeExpiry = studentStates.get(newLeaderId)!;
-    studentStates.set(newLeaderId, { presence: applyStudentPresenceEvent(expiredPresence), answers: applyStudentAnswerEvent(leaderBeforeExpiry.answers, expiredPresence) });
-    teacherGroups = applyTeacherLiveEvent(teacherGroups, expiredRoster);
-    teacherMarkup = renderTeacher();
-    expect(renderPresence(newLeaderId)).toContain('1/2');
-    expect(teacherGroups!.find((group) => group.groupId === newGroup.groupId)).toMatchObject({ onlineCount: 1, occupiedCount: 1 });
-    expect(teacherMarkup).toContain('1/2 個使用中席位');
-    expect(performance.now() - expiryAt).toBeLessThan(2000);
+      .toEqual({ occupied: 2 });
 
     // A winning answer is sent to teacher and both active views in Team 0; each screen renders reducer-derived state.
     transitionActivity(db, teacherId, activityId, '搶答進行中');
+    const phaseRoster = await fetch(`${baseUrl}/api/activities/${activityId}/groups`, { headers: { 'X-Local-Session-Id': teacherId } });
+    const phaseGroups = await phaseRoster.json() as { items: Array<{ groupId: string; joinStatus: LiveGroupRosterRecord['joinStatus']; onlineCount: number }> };
+    teacherGroups = teacherGroups!.map((group) => {
+      const updated = phaseGroups.items.find((item) => item.groupId === group.groupId);
+      return updated ? { ...group, joinStatus: updated.joinStatus, onlineCount: updated.onlineCount } : group;
+    });
+    expect(teacherGroups!.every((group) => group.joinStatus === '停止加入')).toBe(true);
     const answerLeaderId = teams[0].members[0];
     const answerMemberId = teams[0].members[1];
     const legacyTeacherMessage = harness.nextMessage(sockets.get(teacherId)!);

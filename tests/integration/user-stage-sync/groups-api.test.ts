@@ -2,7 +2,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../../server/src/app.js';
-import { createActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
+import { createActivity, openActivityJoining } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
 import { transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import { createGroupWithInviteCode, formatInviteCode } from '../../../server/src/features/user-stage-sync/persistence/group-repository.js';
@@ -27,6 +27,8 @@ describe('group enrollment API', () => {
     teacherId = teacher.sessionId;
     studentId = student.sessionId;
     activityId = createActivity(db, teacherId).activityId;
+    seedGuidedNotesQuestions(db, activityId);
+    openActivityJoining(db, teacherId, activityId);
   });
   afterEach(async () => {
     if (server?.listening) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -54,7 +56,6 @@ describe('group enrollment API', () => {
     expect(db.prepare('SELECT activity_id, group_id FROM user_sessions WHERE id = ?').get(duplicateStudent.sessionId)).toEqual({ activity_id: null, group_id: null });
     expect((await join(studentId, ' ')).status).toBe(400);
     expect((await join(teacherId, 'Teacher Team')).status).toBe(403);
-    seedGuidedNotesQuestions(db, activityId);
     transitionActivity(db, teacherId, activityId, '搶答進行中');
     const late = await join(studentId, 'Late Team');
     expect(late.status).toBe(409);

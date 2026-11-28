@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { SheetsCell, SheetsGridRange, SheetsWorksheetGrid } from '../google-sheets/sheets-gateway.js';
 
-export type LayoutRecognitionErrorCode = 'QUESTION_LAYOUT_UNRECOGNIZED' | 'DUPLICATE_QUESTION_NUMBER' | 'BLANK_NOT_FOUND' | 'AMBIGUOUS_LAYOUT';
+export type LayoutRecognitionErrorCode = 'QUESTION_LAYOUT_UNRECOGNIZED' | 'MISSING_QUESTION_NUMBER' | 'DUPLICATE_QUESTION_NUMBER' | 'BLANK_NOT_FOUND' | 'AMBIGUOUS_LAYOUT';
 
 export class LayoutRecognitionError extends Error {
   constructor(readonly code: LayoutRecognitionErrorCode, message: string) {
@@ -70,10 +70,6 @@ export function detectGuidedNotesLayout(grid: SheetsWorksheetGrid): DetectedGuid
   const questionColumn = headers.find(({ value }) => value === '題號')!.cell.columnIndex;
   const promptColumn = headers.find(({ value }) => value === '題目')!.cell.columnIndex;
   const answerColumn = headers.find(({ value }) => value === '作答')!.cell.columnIndex;
-  if (!(questionColumn < promptColumn && promptColumn < answerColumn)) {
-    throw new LayoutRecognitionError('QUESTION_LAYOUT_UNRECOGNIZED', '講義欄位順序不符合已支援版面，請確認題號、題目與作答欄位置。');
-  }
-
   const answerHeaderMerge = mergeStartingAt(grid.merges, headers.find(({ value }) => value === '作答')!.cell.rowIndex, answerColumn);
   const answerEndColumn = answerHeaderMerge?.endColumnIndex ?? answerColumn + 1;
   const headerRow = [...headerRows][0];
@@ -83,6 +79,26 @@ export function detectGuidedNotesLayout(grid: SheetsWorksheetGrid): DetectedGuid
     .filter((entry): entry is { cell: SheetsCell; questionNumber: number } => entry.questionNumber !== null)
     .sort((a, b) => a.cell.rowIndex - b.cell.rowIndex);
 
+  const structuredRowStarts = new Set(grid.merges
+    .filter((merge) => merge.startRowIndex > headerRow
+      && merge.startColumnIndex === questionColumn && merge.endColumnIndex === questionColumn + 1)
+    .map(({ startRowIndex }) => startRowIndex));
+  const promptRows = grid.merges.filter((merge) => merge.startRowIndex > headerRow
+    && merge.startColumnIndex === promptColumn && merge.endColumnIndex <= answerColumn
+    && merge.endRowIndex === merge.startRowIndex + 1);
+  for (const promptMerge of promptRows) {
+    const hasAnswerStructure = grid.merges.some((merge) => merge.startRowIndex === promptMerge.startRowIndex
+      && merge.endRowIndex === promptMerge.endRowIndex
+      && merge.startColumnIndex === answerColumn && merge.endColumnIndex <= answerEndColumn);
+    if (hasAnswerStructure) structuredRowStarts.add(promptMerge.startRowIndex);
+  }
+  for (const rowIndex of structuredRowStarts) {
+    const rawNumber = cellValue(findCell(cells, rowIndex, questionColumn));
+    if (questionNumberFrom(rawNumber) === null) {
+      throw new LayoutRecognitionError('MISSING_QUESTION_NUMBER', `工作表「${grid.title}」第 ${rowIndex + 1} 列有題目結構，但題號空白或無效，請補上題號後重新匯入。`);
+    }
+  }
+
   if (questionLabels.length === 0) {
     throw new LayoutRecognitionError('QUESTION_LAYOUT_UNRECOGNIZED', '講義中找不到可辨識的正整數題號。');
   }
@@ -90,7 +106,7 @@ export function detectGuidedNotesLayout(grid: SheetsWorksheetGrid): DetectedGuid
   const seenQuestionNumbers = new Set<number>();
   const questions = questionLabels.map(({ cell, questionNumber }) => {
     if (seenQuestionNumbers.has(questionNumber)) {
-      throw new LayoutRecognitionError('DUPLICATE_QUESTION_NUMBER', `題號 ${questionNumber} 重複，請先修正講義。`);
+      throw new LayoutRecognitionError('DUPLICATE_QUESTION_NUMBER', `工作表「${grid.title}」第 ${cell.rowIndex + 1} 列的題號 ${questionNumber} 重複，請修正後重新匯入。`);
     }
     seenQuestionNumbers.add(questionNumber);
     const rows = getQuestionRows(grid.merges, cell.rowIndex, questionColumn);

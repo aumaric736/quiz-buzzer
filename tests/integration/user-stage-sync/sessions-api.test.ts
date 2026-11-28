@@ -4,6 +4,8 @@ import { createApp } from '../../../server/src/app.js';
 import { createTestDatabase } from '../../helpers/sqlite.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
+import { createActivity, openActivityJoining } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
+import { seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
 import type { Server } from 'node:http';
 
 describe('session API', () => {
@@ -59,6 +61,8 @@ describe('session API', () => {
       method: 'POST', headers: { 'content-type': 'application/json', 'X-Local-Session-Id': teacher.sessionId }, body: '{}'
     });
     const activity = await activityResponse.json() as { activityId: string };
+    seedGuidedNotesQuestions(db, activity.activityId);
+    openActivityJoining(db, teacher.sessionId, activity.activityId);
     const groupResponse = await fetch(`${baseUrl}/api/activities/${activity.activityId}/groups`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'X-Local-Session-Id': student.sessionId }, body: JSON.stringify({ groupName: 'Blue Team' })
     });

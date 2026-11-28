@@ -4,7 +4,7 @@ import WebSocket from 'ws';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHttpServer } from '../../../server/src/app.js';
 import { createActivity, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
+import { enrollGroupForTest as enrollGroup } from '../../helpers/sqlite.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
@@ -104,15 +104,15 @@ describe('buzzer realtime privacy and recovery', () => {
     await Promise.all([expectNoEvent(teacher), expectNoEvent(studentA), expectNoEvent(studentB)]);
 
     const own = await fetch(`${baseUrl}/api/activities/${activityId}/answer-status`, { headers: { 'X-Local-Session-Id': studentAId } });
-    expect(await own.json()).toMatchObject({ phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted', answerParts: ['first', 'second'] }] });
+    expect(await own.json()).toMatchObject({ phase: '搶答進行中', items: [{ questionNumber: 2, displayOrder: 0, status: 'submitted', answerParts: ['first', 'second'] }] });
     const other = await fetch(`${baseUrl}/api/activities/${activityId}/answer-status`, { headers: { 'X-Local-Session-Id': studentBId } });
-    expect(await other.json()).toEqual({ phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted', answerParts: ['later', 'review only'] }] });
+    expect(await other.json()).toEqual({ phase: '搶答進行中', items: [{ questionNumber: 2, displayOrder: 0, status: 'submitted', answerParts: ['later', 'review only'] }] });
 
     studentA.close();
     const restored = await connectAndSubscribe(studentAId);
     expect(restored).toBeTruthy();
     const restoredStatus = await fetch(`${baseUrl}/api/activities/${activityId}/answer-status`, { headers: { 'X-Local-Session-Id': studentAId } });
-    expect(await restoredStatus.json()).toEqual({ phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted', answerParts: ['first', 'second'] }] });
+    expect(await restoredStatus.json()).toEqual({ phase: '搶答進行中', items: [{ questionNumber: 2, displayOrder: 0, status: 'submitted', answerParts: ['first', 'second'] }] });
 
     const endEvents = [teacher, studentB, restored].map((socket) => nextEvent(socket, (event) => event.type === 'activity.phase.updated' && event.phase === '已結束'));
     const ended = await fetch(`${baseUrl}/api/activities/${activityId}/phase`, {

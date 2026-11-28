@@ -35,7 +35,7 @@ export interface PersistedBlankMapping {
 }
 
 export function listActivityQuestions(db: SqliteDatabase, activityId: string): number[] {
-  return (db.prepare('SELECT question_number FROM activity_questions WHERE activity_id = ? ORDER BY question_number').all(activityId) as Array<{ question_number: number }>)
+  return (db.prepare('SELECT question_number FROM activity_questions WHERE activity_id = ? ORDER BY display_order').all(activityId) as Array<{ question_number: number }>)
     .map(({ question_number }) => question_number);
 }
 
@@ -46,35 +46,29 @@ export function getGuidedNotesSource(db: SqliteDatabase, activityId: string): Pe
 }
 
 export function listGuidedNotesMappings(db: SqliteDatabase, sourceId: string): PersistedBlankMapping[] {
-  return db.prepare(`SELECT question_number AS questionNumber, slot_order AS slotOrder, row_index AS rowIndex,
-    column_index AS columnIndex, blank_kind AS blankKind FROM guided_notes_blank_mappings
-    WHERE source_id = ? ORDER BY question_number, slot_order`).all(sourceId) as PersistedBlankMapping[];
+  return db.prepare(`SELECT m.question_number AS questionNumber, m.slot_order AS slotOrder, m.row_index AS rowIndex,
+    m.column_index AS columnIndex, m.blank_kind AS blankKind FROM guided_notes_blank_mappings m
+    JOIN activity_questions q ON q.activity_id = m.activity_id AND q.question_number = m.question_number
+    WHERE source_id = ? ORDER BY q.display_order, m.slot_order`).all(sourceId) as PersistedBlankMapping[];
 }
 
 /** Persist a recognized import as one short local transaction. */
 export function saveGuidedNotesImport(db: SqliteDatabase, input: SaveGuidedNotesImportInput): SavedGuidedNotesImport {
   const save = db.transaction(() => {
-    const activity = db.prepare('SELECT phase FROM activities WHERE id = ?').get(input.activityId) as { phase: string } | undefined;
+    const activity = db.prepare('SELECT phase, joining_opened_at AS joiningOpenedAt FROM activities WHERE id = ?').get(input.activityId) as
+      { phase: string; joiningOpenedAt: string | null } | undefined;
     if (!activity) throw new HttpError(404, 'ACTIVITY_NOT_FOUND', '找不到此活動。');
-    if (activity.phase !== '準備中') {
-      throw new HttpError(409, 'GUIDED_NOTES_IMPORT_LOCKED', '搶答開始後無法更換 Guided Notes；請在準備階段完成講義匯入。');
+    if (activity.phase !== '準備中' || activity.joiningOpenedAt) {
+      throw new HttpError(409, 'GUIDED_NOTES_IMPORT_LOCKED', '開放加入後學習單與題目清單已鎖定，無法重新匯入或更換。');
     }
-    const detectedNumbers = input.layout.questions.map(({ questionNumber }) => questionNumber).sort((a, b) => a - b);
-    const existingNumbers = listActivityQuestions(db, input.activityId);
-    if (existingNumbers.length > 0 && existingNumbers.length !== detectedNumbers.length) {
-      throw new HttpError(409, 'QUESTION_COUNT_MISMATCH', `活動已有 ${existingNumbers.length} 題，講義辨識出 ${detectedNumbers.length} 題；請使用題數相同的講義。`);
-    }
-    if (existingNumbers.length > 0 && existingNumbers.some((number, index) => number !== detectedNumbers[index])) {
-      throw new HttpError(409, 'QUESTION_NUMBER_MISMATCH', '活動既有題號與講義題號不同；請確認兩者題目清單一致後再匯入。');
-    }
-
-    if (existingNumbers.length === 0) {
-      const insertQuestion = db.prepare('INSERT INTO activity_questions (id, activity_id, question_number, created_at) VALUES (?, ?, ?, ?)');
-      const createdAt = new Date().toISOString();
-      for (const questionNumber of detectedNumbers) insertQuestion.run(randomUUID(), input.activityId, questionNumber, createdAt);
-    }
-
+    db.prepare('DELETE FROM activity_questions WHERE activity_id = ?').run(input.activityId);
     db.prepare('DELETE FROM guided_notes_sources WHERE activity_id = ?').run(input.activityId);
+    const insertQuestion = db.prepare(`INSERT INTO activity_questions
+      (id, activity_id, question_number, display_order, created_at) VALUES (?, ?, ?, ?, ?)`);
+    const createdAt = new Date().toISOString();
+    input.layout.questions.forEach((question, displayOrder) => {
+      insertQuestion.run(randomUUID(), input.activityId, question.questionNumber, displayOrder, createdAt);
+    });
     const sourceId = randomUUID();
     const now = new Date().toISOString();
     db.prepare(`INSERT INTO guided_notes_sources

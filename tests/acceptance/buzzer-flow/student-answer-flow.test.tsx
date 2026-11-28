@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { submitBuzzerAnswer, getBuzzerQuestions } from '../../../client/src/features/buzzer-flow/services/buzzer-flow-api.js';
 import { createApp } from '../../../server/src/app.js';
 import { createActivity, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
+import { enrollGroupForTest as enrollGroup } from '../../helpers/sqlite.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
@@ -36,7 +36,7 @@ describe('student answer flow acceptance', () => {
 
   it('loads the imported question numbers and accepts an ordered answer only after the teacher opens the buzzer', async () => {
     expect(await getBuzzerQuestions(studentId, activityId, baseUrl)).toEqual({
-      questions: [{ questionNumber: 2, blankCount: 2 }, { questionNumber: 5, blankCount: 2 }]
+      questions: [{ questionNumber: 2, displayOrder: 0, blankCount: 2 }, { questionNumber: 5, displayOrder: 1, blankCount: 2 }]
     });
     await expect(submitBuzzerAnswer(studentId, activityId, { questionNumber: 2, answerParts: ['first', 'second'] }, baseUrl))
       .rejects.toThrow('目前不是搶答進行中');

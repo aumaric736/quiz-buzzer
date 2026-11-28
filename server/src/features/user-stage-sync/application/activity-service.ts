@@ -1,7 +1,7 @@
 import { ACTIVITY_PHASES, type ActivityPhase, type ActivitySnapshot } from '@quiz-buzzer/shared';
 import type { SqliteDatabase } from '../persistence/database.js';
 import { HttpError } from '../../../api/validation.js';
-import { createActivityRecord, findActivity, updateActivityPhase } from '../persistence/activity-repository.js';
+import { createActivityRecord, findActivity, openActivityJoiningRecord, updateActivityPhase } from '../persistence/activity-repository.js';
 
 function requireTeacher(db: SqliteDatabase, sessionId: string, activityId?: string): void {
   const session = db.prepare('SELECT role, retired_at, authenticated_at FROM user_sessions WHERE id = ?').get(sessionId) as { role: string; retired_at: string | null; authenticated_at: string | null } | undefined;
@@ -12,7 +12,7 @@ function requireTeacher(db: SqliteDatabase, sessionId: string, activityId?: stri
   if (activityId) {
     const activity = db.prepare('SELECT created_by_session_id FROM activities WHERE id = ?').get(activityId) as { created_by_session_id: string } | undefined;
     if (!activity) throw new HttpError(404, 'ACTIVITY_NOT_FOUND', '找不到此活動。');
-    if (activity.created_by_session_id !== sessionId) throw new HttpError(403, 'ACTIVITY_OWNER_REQUIRED', '只有建立此活動的老師可以切換階段。');
+    if (activity.created_by_session_id !== sessionId) throw new HttpError(403, 'ACTIVITY_OWNER_REQUIRED', '只有建立此活動的老師可以執行此操作。');
   }
 }
 
@@ -25,6 +25,11 @@ export function getActivity(db: SqliteDatabase, activityId: string): ActivitySna
   return findActivity(db, activityId);
 }
 
+export function openActivityJoining(db: SqliteDatabase, sessionId: string, activityId: string): ActivitySnapshot {
+  requireTeacher(db, sessionId, activityId);
+  return openActivityJoiningRecord(db, activityId);
+}
+
 function requireImportedQuestions(db: SqliteDatabase, activityId: string): void {
   const rows = db.prepare(`SELECT q.question_number AS questionNumber, COUNT(m.slot_order) AS blankCount,
       MIN(m.slot_order) AS firstSlot, MAX(m.slot_order) AS lastSlot
@@ -34,7 +39,7 @@ function requireImportedQuestions(db: SqliteDatabase, activityId: string): void 
       ON m.source_id = s.id AND m.activity_id = q.activity_id AND m.question_number = q.question_number
     WHERE q.activity_id = ?
     GROUP BY q.question_number
-    ORDER BY q.question_number`).all(activityId) as Array<{
+    ORDER BY q.display_order`).all(activityId) as Array<{
       questionNumber: number; blankCount: number; firstSlot: number | null; lastSlot: number | null
     }>;
   if (rows.length === 0) {

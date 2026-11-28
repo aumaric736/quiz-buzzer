@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ActivityPhase, ActivitySnapshot, AnswerStatusResponse, BuzzerQuestionUpdatedEvent, LiveGroupRosterRecord, TeacherQuestionStatus, TeacherReviewRecordsResponse, UserSession, WinningAnswerResult } from '@quiz-buzzer/shared';
-import { changeActivityPhase, createActivity } from '../services/activity-api.js';
+import type { ActivityPhase, ActivitySnapshot, AnswerStatusResponse, BuzzerQuestionUpdatedEvent, LiveGroupRosterRecord, TeacherQuestionProgress, TeacherQuestionStatus, TeacherReviewRecordsResponse, UserSession, WinningAnswerResult } from '@quiz-buzzer/shared';
+import { changeActivityPhase, createActivity, getTeacherActivityProgress, openActivityJoining } from '../services/activity-api.js';
 import { ActivityPhaseStatus } from '../components/ActivityPhaseStatus.js';
 import { GuidedNotesImportView } from '../../guided-notes/views/GuidedNotesImportView.js';
 import { GuidedNotesExportPreview } from '../../guided-notes/views/GuidedNotesExportPreview.js';
 import { confirmExport } from '../../guided-notes/services/export-preview-api.js';
 import { getAnswerStatus } from '../services/answer-access-api.js';
 import { QuestionResultList } from '../../buzzer-flow/components/QuestionResultList.js';
+import { QuestionAnswerProgress } from '../../buzzer-flow/components/QuestionAnswerProgress.js';
 import { getTeacherReviewRecords } from '../../results-review/services/results-review-api.js';
 import { TeacherActivityHistory } from '../../results-review/components/TeacherActivityHistory.js';
 import { TeacherSubmissionReview } from '../../results-review/components/TeacherSubmissionReview.js';
 import { ActivityJoinCode } from '../components/ActivityJoinCode.js';
 import { TeacherGroupRoster } from '../components/TeacherGroupRoster.js';
-import { applyTeacherLiveEvent } from '../services/live-activity-state.js';
+import { applyTeacherLiveEvent, applyTeacherQuestionProgress } from '../services/live-activity-state.js';
 
 interface TeacherActivityViewProps { session: UserSession; initialActivity?: ActivitySnapshot | null }
 
@@ -23,6 +24,7 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [answerItems, setAnswerItems] = useState<Array<TeacherQuestionStatus | WinningAnswerResult>>([]);
+  const [teacherProgress, setTeacherProgress] = useState<TeacherQuestionProgress[]>([]);
   const [liveGroups, setLiveGroups] = useState<LiveGroupRosterRecord[] | null>(null);
   const [selectedReviewActivityId, setSelectedReviewActivityId] = useState<string | null>(null);
   const [review, setReview] = useState<TeacherReviewRecordsResponse | null>(null);
@@ -32,6 +34,11 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
   const refreshAnswerStatus = useCallback(async () => {
     if (!activity || activity.phase === '準備中') return;
     try {
+      if (activity.phase === '搶答進行中') {
+        const progress = await getTeacherActivityProgress(session.sessionId, activity.activityId);
+        setTeacherProgress(progress.questions);
+        return;
+      }
       const status: AnswerStatusResponse = await getAnswerStatus(session.sessionId, activity.activityId);
       if (status.phase !== '準備中') {
         setAnswerItems(status.items as Array<TeacherQuestionStatus | WinningAnswerResult>);
@@ -47,6 +54,7 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
       setLiveGroups((current) => applyTeacherLiveEvent(current, event));
     } else if (event.type === 'activity.team-answer.updated' && event.activityId === activity?.activityId) {
       setLiveGroups((current) => applyTeacherLiveEvent(current, event));
+      setTeacherProgress((current) => applyTeacherQuestionProgress(current, event.questionProgress));
     }
   }
 
@@ -68,6 +76,7 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
       setActivity(created);
       setAnswerItems([]);
       setLiveGroups(null);
+      setTeacherProgress([]);
       setSelectedReviewActivityId(null);
       setReview(null);
       setHistoryRefreshToken((value) => value + 1);
@@ -94,9 +103,11 @@ export function TeacherActivityView({ session, initialActivity = null }: Teacher
       <div className="mt-5 rounded-2xl bg-indigo-50 p-6"><p className="text-sm text-indigo-800">目前階段</p><p aria-live="polite" className="mt-1 text-3xl font-bold text-indigo-950">{activity.phase}</p></div>
       <ActivityPhaseStatus sessionId={session.sessionId} activity={activity} onUpdate={setActivity} onReconnect={() => void refreshAnswerStatus()} onBuzzerUpdate={handleBuzzerUpdate} onLiveEvent={handleLiveEvent} />
       <p className="mt-3 text-sm text-slate-600">搶答不設倒數，會持續進行直到老師手動結束。</p>
+      {activity.phase === '準備中' && !activity.joiningOpenedAt && <button type="button" className="mt-5 mr-3 rounded-xl border border-indigo-300 px-5 py-3 font-semibold text-indigo-800 disabled:opacity-50" disabled={busy} onClick={() => void run(() => openActivityJoining(session.sessionId, activity.activityId))}>{busy ? '更新中…' : '開放加入'}</button>}
       {nextPhase[activity.phase] && <button className="mt-5 rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50" disabled={busy} onClick={() => void run(() => changeActivityPhase(session.sessionId, activity.activityId, nextPhase[activity.phase]!))}>{busy ? '更新中…' : activity.phase === '準備中' ? '開始搶答' : '結束活動'}</button>}
-      <GuidedNotesImportView session={session} activityId={activity.activityId} />
-      {activity.phase !== '準備中' && <QuestionResultList items={answerItems} />}
+      <GuidedNotesImportView session={session} activityId={activity.activityId} locked={activity.phase !== '準備中' || Boolean(activity.joiningOpenedAt)} />
+      {activity.phase === '搶答進行中' && <QuestionAnswerProgress questions={teacherProgress} />}
+      {activity.phase === '已結束' && <QuestionResultList items={answerItems} />}
       {activity.phase === '已結束' && <GuidedNotesExportPreview session={session} activityId={activity.activityId} onConfirm={(previewId) => confirmExport(session.sessionId, activity.activityId, previewId)} />}
       {activity.phase === '已結束' && <button type="button" className="mt-5 rounded-xl border border-indigo-300 px-5 py-3 font-semibold text-indigo-800 disabled:opacity-50" disabled={busy} onClick={() => void createNewActivity()}>{busy ? '建立中…' : '建立新活動'}</button>}
     </div>}

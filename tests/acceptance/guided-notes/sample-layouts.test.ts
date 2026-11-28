@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { detectGuidedNotesLayout } from '../../../server/src/features/guided-notes/domain/layout-recognizer.js';
 import { groupSampleGrid, shiftSampleGrid, singleSlotSampleGrid } from '../../helpers/guided-notes-sample-grids.js';
 
+function reorderedColumns(grid: ReturnType<typeof groupSampleGrid>) {
+  const mapCell = (column: number) => ({ 1: 1, 2: 4, 6: 6 }[column] ?? column);
+  return { ...grid,
+    cells: grid.cells.map((cell) => ({ ...cell, columnIndex: mapCell(cell.columnIndex) })),
+    merges: grid.merges.map((merge) => {
+      const interval = `${merge.startColumnIndex}:${merge.endColumnIndex}`;
+      const [startColumnIndex, endColumnIndex] = interval === '1:2' ? [1, 2]
+        : interval === '2:6' ? [4, 6] : interval === '6:8' ? [6, 8]
+          : [merge.startColumnIndex, merge.endColumnIndex];
+      return { ...merge, startColumnIndex, endColumnIndex };
+    })
+  };
+}
+
 describe('Guided Notes sample layouts', () => {
   it('recognizes the multi-row, ordered-slot sample without importing prompt text', () => {
     const layout = detectGuidedNotesLayout(groupSampleGrid());
@@ -31,5 +45,11 @@ describe('Guided Notes sample layouts', () => {
       expect(shifted.questions[0].blanks[0].rowIndex).toBe(original.questions[0].blanks[0].rowIndex + 7);
       expect(shifted.questions[0].blanks[0].columnIndex).toBe(original.questions[0].blanks[0].columnIndex + 3);
     }
+  });
+
+  it('recognizes the supplied group template when its question, prompt, and answer columns are reordered', () => {
+    const layout = detectGuidedNotesLayout(reorderedColumns(groupSampleGrid()));
+    expect(layout.questions.map(({ questionNumber }) => questionNumber)).toEqual([1, 2, 3, 4]);
+    expect(layout.questions.map(({ blanks }) => blanks.length)).toEqual([2, 2, 1, 1]);
   });
 });

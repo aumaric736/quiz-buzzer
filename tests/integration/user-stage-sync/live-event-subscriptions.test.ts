@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHttpServer } from '../../../server/src/app.js';
 import { createActivity, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
+import { enrollGroupForTest as enrollGroup } from '../../helpers/sqlite.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createLiveTeamTestHarness, type LiveTeamTestHarness } from '../../helpers/live-team-activity.js';
@@ -74,8 +74,8 @@ describe('live activity WebSocket snapshots', () => {
     };
     expect(snapshot).toMatchObject({ type: 'activity.roster.updated', activityId, activityLiveRevision: 2 });
     expect(snapshot.groups).toEqual(expect.arrayContaining([
-      expect.objectContaining({ groupId: blueGroupId, answers: expect.arrayContaining([expect.objectContaining({ questionNumber: 1, status: 'submitted', answerParts: ['Blue answer'] })]) }),
-      expect.objectContaining({ groupId: greenGroupId, answers: expect.arrayContaining([expect.objectContaining({ questionNumber: 2, status: 'submitted', answerParts: ['Green answer'] })]) })
+      expect.objectContaining({ groupId: blueGroupId, answers: expect.arrayContaining([expect.objectContaining({ questionNumber: 1, displayOrder: 0, status: 'submitted', answerParts: ['Blue answer'] })]) }),
+      expect.objectContaining({ groupId: greenGroupId, answers: expect.arrayContaining([expect.objectContaining({ questionNumber: 2, displayOrder: 1, status: 'submitted', answerParts: ['Green answer'] })]) })
     ]));
   });
 
@@ -85,7 +85,7 @@ describe('live activity WebSocket snapshots', () => {
       type: string; groupId: string; groupRole: string; answers: Array<{ questionNumber: number; status: string; answerParts?: string[] }>;
     };
     expect(blueSnapshot).toMatchObject({ type: 'team.presence.updated', groupId: blueGroupId, groupRole: 'leader' });
-    expect(blueSnapshot.answers).toContainEqual({ questionNumber: 1, status: 'submitted', answerParts: ['Blue answer'] });
+    expect(blueSnapshot.answers).toContainEqual({ questionNumber: 1, displayOrder: 0, status: 'submitted', answerParts: ['Blue answer'] });
     expect(blueSnapshot.answers).not.toContainEqual(expect.objectContaining({ questionNumber: 2, answerParts: ['Green answer'] }));
 
     const { snapshot: rawGreenSnapshot } = await subscribe(greenStudentId);
@@ -93,7 +93,7 @@ describe('live activity WebSocket snapshots', () => {
       type: string; groupId: string; answers: Array<{ questionNumber: number; status: string; answerParts?: string[] }>;
     };
     expect(greenSnapshot.groupId).toBe(greenGroupId);
-    expect(greenSnapshot.answers).toContainEqual({ questionNumber: 2, status: 'submitted', answerParts: ['Green answer'] });
+    expect(greenSnapshot.answers).toContainEqual({ questionNumber: 2, displayOrder: 1, status: 'submitted', answerParts: ['Green answer'] });
     expect(greenSnapshot.answers).not.toContainEqual(expect.objectContaining({ questionNumber: 1, answerParts: ['Blue answer'] }));
   });
 

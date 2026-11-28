@@ -17,10 +17,11 @@ function requireTeacherActivity(db: SqliteDatabase, sessionId: string, activityI
 }
 
 function requirePreparationPhase(db: SqliteDatabase, activityId: string): void {
-  const activity = db.prepare('SELECT phase FROM activities WHERE id = ?').get(activityId) as { phase: string } | undefined;
+  const activity = db.prepare('SELECT phase, joining_opened_at AS joiningOpenedAt FROM activities WHERE id = ?').get(activityId) as
+    { phase: string; joiningOpenedAt: string | null } | undefined;
   if (!activity) throw new HttpError(404, 'ACTIVITY_NOT_FOUND', '找不到此活動。');
-  if (activity.phase !== '準備中') {
-    throw new HttpError(409, 'GUIDED_NOTES_IMPORT_LOCKED', '搶答開始後無法更換 Guided Notes；請在準備階段完成講義匯入。');
+  if (activity.phase !== '準備中' || activity.joiningOpenedAt) {
+    throw new HttpError(409, 'GUIDED_NOTES_IMPORT_LOCKED', '開放加入後學習單與題目清單已鎖定，無法重新匯入或更換。');
   }
 }
 

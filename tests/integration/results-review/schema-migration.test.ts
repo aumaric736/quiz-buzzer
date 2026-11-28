@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
+import { enrollGroupForTest as enrollGroup } from '../../helpers/sqlite.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import { applyMigrations } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
@@ -16,7 +16,7 @@ describe('results-review SQLite migration', () => {
     db = new Database(':memory:');
     db.pragma('foreign_keys = ON');
     const migrations = resolve(process.cwd(), 'server/src/features/user-stage-sync/persistence/migrations');
-    for (const name of ['001-user-stage-sync.sql', '002-guided-notes-sheets.sql', '003-buzzer-flow.sql', '005-user-stage-recovery.sql', '006-two-person-teams.sql', '008-live-team-activity.sql']) {
+    for (const name of ['001-user-stage-sync.sql', '002-guided-notes-sheets.sql', '003-buzzer-flow.sql', '005-user-stage-recovery.sql', '006-two-person-teams.sql', '008-live-team-activity.sql', '009-runtime-behavior-alignment.sql']) {
       applyMigrations(db, resolve(migrations, name));
     }
 

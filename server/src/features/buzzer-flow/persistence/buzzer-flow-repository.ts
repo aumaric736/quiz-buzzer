@@ -1,12 +1,47 @@
 import type { SqliteDatabase } from '../../user-stage-sync/persistence/database.js';
 import { HttpError } from '../../../api/validation.js';
 import { requireActiveSession } from '../../user-stage-sync/application/session-service.js';
+import type { TeacherQuestionProgress } from '@quiz-buzzer/shared';
+
+export function getTeacherQuestionProgress(db: SqliteDatabase, activityId: string): TeacherQuestionProgress[] {
+  const questions = db.prepare(`SELECT question_number AS questionNumber, display_order AS displayOrder
+    FROM activity_questions WHERE activity_id = ? ORDER BY display_order`).all(activityId) as Array<{ questionNumber: number; displayOrder: number }>;
+  const groups = db.prepare(`SELECT id AS groupId, display_name AS groupName FROM groups WHERE activity_id = ? ORDER BY joined_at, id`)
+    .all(activityId) as Array<{ groupId: string; groupName: string }>;
+  const submissions = db.prepare(`SELECT question_number AS questionNumber, group_id AS groupId,
+      answer_parts_json AS answerPartsJson, submission_rank AS submissionRank
+    FROM buzzer_submissions WHERE activity_id = ? ORDER BY question_number, submission_rank`).all(activityId) as Array<{
+      questionNumber: number; groupId: string; answerPartsJson: string; submissionRank: number
+    }>;
+  const byQuestion = new Map<number, Map<string, { answerParts: string[]; submissionRank: number }>>();
+  for (const row of submissions) {
+    let answers = byQuestion.get(row.questionNumber);
+    if (!answers) { answers = new Map(); byQuestion.set(row.questionNumber, answers); }
+    let answerParts: unknown;
+    try { answerParts = JSON.parse(row.answerPartsJson); }
+    catch { throw new HttpError(409, 'ANSWER_DATA_INVALID', '作答資料格式異常，無法載入即時進度。'); }
+    if (!Array.isArray(answerParts) || answerParts.some((part) => typeof part !== 'string')) {
+      throw new HttpError(409, 'ANSWER_DATA_INVALID', '作答資料格式異常，無法載入即時進度。');
+    }
+    answers.set(row.groupId, { answerParts: answerParts as string[], submissionRank: row.submissionRank });
+  }
+  return questions.map((question) => {
+    const answers = byQuestion.get(question.questionNumber);
+    const answeredGroups = groups.flatMap((group) => {
+      const answer = answers?.get(group.groupId);
+      return answer ? [{ ...group, ...answer }] : [];
+    }).sort((left, right) => left.submissionRank - right.submissionRank);
+    const unansweredGroups = groups.filter((group) => !answers?.has(group.groupId));
+    return { ...question, answeredGroupCount: answeredGroups.length, totalGroupCount: groups.length, answeredGroups, unansweredGroups };
+  });
+}
 
 export interface AcceptedAnswerSubmission {
   acceptedOrder: number;
   acceptedAt: string;
   activityId: string;
   questionNumber: number;
+  displayOrder: number;
   groupId: string;
   groupName: string;
   answerParts: string[];
@@ -51,7 +86,7 @@ export function acceptAnswerSubmission(db: SqliteDatabase, input: AcceptAnswerIn
       throw new HttpError(409, 'BUZZER_NOT_OPEN', '目前不是搶答進行中，只有活動開放時才能提交答案。');
     }
 
-    const question = db.prepare(`SELECT q.question_number AS questionNumber, COUNT(m.slot_order) AS blankCount,
+    const question = db.prepare(`SELECT q.question_number AS questionNumber, q.display_order AS displayOrder, COUNT(m.slot_order) AS blankCount,
         MIN(m.slot_order) AS firstSlot, MAX(m.slot_order) AS lastSlot
       FROM activity_questions q
       LEFT JOIN guided_notes_sources s ON s.activity_id = q.activity_id
@@ -59,7 +94,7 @@ export function acceptAnswerSubmission(db: SqliteDatabase, input: AcceptAnswerIn
         ON m.source_id = s.id AND m.activity_id = q.activity_id AND m.question_number = q.question_number
       WHERE q.activity_id = ? AND q.question_number = ?
       GROUP BY q.question_number`).get(input.activityId, input.questionNumber) as {
-        questionNumber: number; blankCount: number; firstSlot: number | null; lastSlot: number | null
+        questionNumber: number; displayOrder: number; blankCount: number; firstSlot: number | null; lastSlot: number | null
       } | undefined;
     if (!question) throw new HttpError(404, 'QUESTION_NOT_FOUND', '找不到這題，請重新載入活動題目。');
     if (question.blankCount < 1 || question.firstSlot !== 0 || question.lastSlot !== question.blankCount - 1) {
@@ -86,7 +121,7 @@ export function acceptAnswerSubmission(db: SqliteDatabase, input: AcceptAnswerIn
       const priorParts = JSON.parse(prior.answerPartsJson) as string[];
       if (JSON.stringify(priorParts) !== JSON.stringify(input.answerParts)) rejectDuplicateSubmission();
       return { acceptedOrder: prior.acceptedOrder, acceptedAt: prior.acceptedAt, activityId: input.activityId,
-        questionNumber: input.questionNumber, groupId: group.id, groupName: group.displayName, answerParts: priorParts,
+        questionNumber: input.questionNumber, displayOrder: question.displayOrder, groupId: group.id, groupName: group.displayName, answerParts: priorParts,
         isWinner: prior.isWinner === 1, isReplay: true };
     }
 
@@ -107,6 +142,7 @@ export function acceptAnswerSubmission(db: SqliteDatabase, input: AcceptAnswerIn
     return {
       acceptedOrder: Number(result.lastInsertRowid), acceptedAt,
       activityId: input.activityId, questionNumber: input.questionNumber,
+      displayOrder: question.displayOrder,
       groupId: group.id, groupName: group.displayName, answerParts: input.answerParts, isWinner, submissionRank
     };
   });

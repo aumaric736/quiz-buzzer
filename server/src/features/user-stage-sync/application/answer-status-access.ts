@@ -35,13 +35,13 @@ export function readAnswerStatus(db: SqliteDatabase, sessionId: string, activity
   if (activity.phase === '已結束') return { phase: '已結束', items: loadEndedAnswerResults(db, activityId) };
 
   if (session.role === 'teacher') {
-    const items = db.prepare(`SELECT q.question_number AS questionNumber, b.group_id AS groupId,
+    const items = db.prepare(`SELECT q.question_number AS questionNumber, q.display_order AS displayOrder, b.group_id AS groupId,
         g.display_name AS groupName, b.answer_parts_json AS answerPartsJson
       FROM activity_questions q
       LEFT JOIN buzzer_submissions b ON b.activity_id = q.activity_id AND b.question_number = q.question_number AND b.is_winner = 1
       LEFT JOIN groups g ON g.id = b.group_id AND g.activity_id = b.activity_id
-      WHERE q.activity_id = ? ORDER BY q.question_number`).all(activityId) as Array<{
-        questionNumber: number; groupId: string | null; groupName: string | null; answerPartsJson: string | null
+      WHERE q.activity_id = ? ORDER BY q.display_order`).all(activityId) as Array<{
+        questionNumber: number; displayOrder: number; groupId: string | null; groupName: string | null; answerPartsJson: string | null
       }>;
     return {
       phase: '搶答進行中',
@@ -60,9 +60,9 @@ export function readAnswerStatus(db: SqliteDatabase, sessionId: string, activity
     };
   }
 
-  const items = db.prepare(`SELECT q.question_number AS questionNumber, b.answer_parts_json AS answerPartsJson
+  const items = db.prepare(`SELECT q.question_number AS questionNumber, q.display_order AS displayOrder, b.answer_parts_json AS answerPartsJson
     FROM buzzer_submissions b
     JOIN activity_questions q ON q.activity_id = b.activity_id AND q.question_number = b.question_number
-    WHERE b.activity_id = ? AND b.group_id = ? ORDER BY q.question_number`).all(activityId, session.groupId) as Array<{ questionNumber: number; answerPartsJson: string }>;
-  return { phase: '搶答進行中', items: items.map(({ questionNumber, answerPartsJson }) => ({ questionNumber, status: 'submitted' as const, answerParts: parseLiveAnswerParts(answerPartsJson) })) };
+    WHERE b.activity_id = ? AND b.group_id = ? ORDER BY q.display_order`).all(activityId, session.groupId) as Array<{ questionNumber: number; displayOrder: number; answerPartsJson: string }>;
+  return { phase: '搶答進行中', items: items.map(({ questionNumber, displayOrder, answerPartsJson }) => ({ questionNumber, displayOrder, status: 'submitted' as const, answerParts: parseLiveAnswerParts(answerPartsJson) })) };
 }

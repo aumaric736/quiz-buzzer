@@ -22,9 +22,31 @@ function validAnswerSnapshots(value: unknown): boolean {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) return false;
     const answer = item as Record<string, unknown>;
     return Number.isSafeInteger(answer.questionNumber) && (answer.questionNumber as number) > 0
+      && Number.isSafeInteger(answer.displayOrder) && (answer.displayOrder as number) >= 0
       && (answer.status === 'unanswered' || answer.status === 'submitted')
       && (answer.status === 'unanswered' ? answer.answerParts === undefined : validAnswerParts(answer.answerParts));
   });
+}
+
+function validTeacherQuestionProgress(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const progress = value as Record<string, unknown>;
+  const validGroups = (groups: unknown, answered: boolean) => Array.isArray(groups) && groups.every((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return false;
+    const group = item as Record<string, unknown>;
+    return typeof group.groupId === 'string' && !!group.groupId && typeof group.groupName === 'string'
+      && !!group.groupName && (!answered || (Array.isArray(group.answerParts) && group.answerParts.length > 0
+        && group.answerParts.every((part) => typeof part === 'string') && Number.isSafeInteger(group.submissionRank)
+        && (group.submissionRank as number) > 0));
+  });
+  return typeof progress.questionNumber === 'number' && Number.isSafeInteger(progress.questionNumber) && progress.questionNumber > 0
+    && typeof progress.displayOrder === 'number' && Number.isSafeInteger(progress.displayOrder) && progress.displayOrder >= 0
+    && typeof progress.answeredGroupCount === 'number' && Number.isSafeInteger(progress.answeredGroupCount)
+    && typeof progress.totalGroupCount === 'number' && Number.isSafeInteger(progress.totalGroupCount)
+    && Array.isArray(progress.answeredGroups) && progress.answeredGroupCount === progress.answeredGroups.length
+    && progress.totalGroupCount >= progress.answeredGroupCount
+    && validGroups(progress.answeredGroups, true) && validGroups(progress.unansweredGroups, false)
+    && progress.answeredGroupCount + (progress.unansweredGroups as unknown[]).length === progress.totalGroupCount;
 }
 
 export function parseActivitySocketEvent(raw: string, expectedActivityId: string, expectedGroupId?: string): ActivitySocketEvent | null {
@@ -40,8 +62,8 @@ export function parseActivitySocketEvent(raw: string, expectedActivityId: string
       return typeof group.groupId === 'string' && group.groupId.length > 0
         && typeof group.displayName === 'string' && group.displayName.length > 0
         && (group.inviteCode === undefined || typeof group.inviteCode === 'string')
-        && validCount(group.onlineCount) && validCount(group.occupiedCount)
-        && group.onlineCount <= group.occupiedCount && group.capacity === 2 && typeof group.acceptsMembers === 'boolean'
+        && validCount(group.onlineCount)
+        && ['不可用', '開放加入', '額滿', '停止加入'].includes(String(group.joinStatus))
         && validAnswerSnapshots(group.answers);
     });
     return validGroups ? event as unknown as ActivityRosterUpdatedEvent : null;
@@ -59,6 +81,7 @@ export function parseActivitySocketEvent(raw: string, expectedActivityId: string
     if (event.activityId !== expectedActivityId || typeof event.groupId !== 'string' || !event.groupId
       || (expectedGroupId !== undefined && event.groupId !== expectedGroupId) || !validRevision(event.groupLiveRevision)
       || !Number.isSafeInteger(event.questionNumber) || (event.questionNumber as number) < 1
+      || !Number.isSafeInteger(event.displayOrder) || (event.displayOrder as number) < 0
       || event.status !== 'submitted' || !validAnswerParts(event.answerParts)) return null;
     return event as unknown as TeamAnswerUpdatedEvent;
   }
@@ -66,11 +89,12 @@ export function parseActivitySocketEvent(raw: string, expectedActivityId: string
     if (event.activityId !== expectedActivityId || !validRevision(event.activityLiveRevision)
       || typeof event.groupId !== 'string' || !event.groupId || typeof event.groupName !== 'string' || !event.groupName
       || !Number.isSafeInteger(event.questionNumber) || (event.questionNumber as number) < 1
-      || event.status !== 'submitted' || !validAnswerParts(event.answerParts)) return null;
+      || event.status !== 'submitted' || !validAnswerParts(event.answerParts) || !validTeacherQuestionProgress(event.questionProgress)) return null;
     return event as unknown as ActivityTeamAnswerUpdatedEvent;
   }
   if (event.type === 'buzzer.question.updated') {
     if (event.activityId !== expectedActivityId || !Number.isSafeInteger(event.questionNumber) || (event.questionNumber as number) < 1
+      || !Number.isSafeInteger(event.displayOrder) || (event.displayOrder as number) < 0
       || event.status !== 'won' || typeof event.groupId !== 'string' || !event.groupId
       || typeof event.groupName !== 'string' || !event.groupName || !Array.isArray(event.answerParts)
       || event.answerParts.length < 1 || event.answerParts.some((part) => typeof part !== 'string' || !part.trim())) return null;

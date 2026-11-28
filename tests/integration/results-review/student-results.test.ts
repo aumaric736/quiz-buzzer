@@ -2,8 +2,8 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../../server/src/app.js';
-import { createActivity, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
+import { createActivity, openActivityJoining, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
+import { enrollGroupForTest as enrollGroup } from '../../helpers/sqlite.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
@@ -53,7 +53,7 @@ describe('student final results', () => {
     expect(answer.status).toBe(201);
 
     expect(await (await readStatus(studentAId)).json()).toEqual({
-      phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted', answerParts: ['first', 'second'] }]
+      phase: '搶答進行中', items: [{ questionNumber: 2, displayOrder: 0, status: 'submitted', answerParts: ['first', 'second'] }]
     });
     expect(await (await readStatus(studentBId)).json()).toEqual({ phase: '搶答進行中', items: [] });
 
@@ -80,6 +80,7 @@ describe('student final results', () => {
 
     const newActivityId = createActivity(db, teacherId).activityId;
     seedGuidedNotesQuestions(db, newActivityId, [2, 5], 2);
+    openActivityJoining(db, teacherId, newActivityId);
     const joinNewActivity = await fetch(`${baseUrl}/api/activities/${newActivityId}/groups`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'X-Local-Session-Id': studentAId },
       body: JSON.stringify({ groupName: 'Blue Team New Run' })

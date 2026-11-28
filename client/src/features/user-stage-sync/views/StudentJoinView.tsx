@@ -25,8 +25,8 @@ export function StudentJoinView({ session, initialActivity = null }: StudentJoin
   const [activityId, setActivityId] = useState(session.activityId ?? '');
   const [groupName, setGroupName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
-  const [joinMode, setJoinMode] = useState<'leader' | 'member'>('leader');
-  const [group, setGroup] = useState<GroupRecord | null>(() => session.activityId && session.groupId ? {
+  const [joinMode, setJoinMode] = useState<'leader' | 'member'>(session.recoveryRequired ? 'member' : 'leader');
+  const [group, setGroup] = useState<GroupRecord | null>(() => session.activityId && session.groupId && !session.recoveryRequired ? {
     groupId: session.groupId, activityId: session.activityId, displayName: session.groupName ?? '已加入組別', inviteCode: session.groupInviteCode ?? undefined
   } : null);
   const [presence, setPresence] = useState<StudentTeamLiveSnapshot | null>(null);
@@ -82,7 +82,7 @@ export function StudentJoinView({ session, initialActivity = null }: StudentJoin
     <p className="text-sm font-medium text-indigo-700">學生畫面</p><h2 className="mt-1 text-2xl font-bold">加入課堂活動</h2>
     {group && activity ? <div className="mt-7 rounded-2xl bg-indigo-50 p-6"><p className="text-sm text-indigo-800">組別</p><p className="mt-1 text-xl font-semibold">{group.displayName}</p>{group.inviteCode && <div className="mt-3 rounded-xl bg-white p-4"><p className="text-sm text-indigo-800">小組邀請碼</p><p className="font-mono text-2xl font-bold tracking-widest">{group.inviteCode}</p></div>}<p className="mt-5 text-sm text-indigo-800">目前階段</p><p aria-live="polite" className="mt-1 text-2xl font-bold">{activity.phase}</p>
       {presence && <GroupPresenceStatus snapshot={presence} />}
-      <ActivityPhaseStatus sessionId={session.sessionId} activity={activity} groupId={group.groupId} onUpdate={setActivity}
+      {activity.phase !== '已結束' && <ActivityPhaseStatus sessionId={session.sessionId} activity={activity} groupId={group.groupId} onUpdate={setActivity}
         onReconnect={() => void refreshAnswerStatus()} onLiveEvent={(event: Exclude<ActivitySocketEvent, ActivitySnapshot>) => {
           if (event.type === 'team.presence.updated' && event.groupId === group.groupId) {
             const snapshot = applyStudentPresenceEvent(event);
@@ -92,11 +92,12 @@ export function StudentJoinView({ session, initialActivity = null }: StudentJoin
           if (event.type === 'team.answer.updated' && event.groupId === group.groupId) {
             setAnswerItems((current) => applyStudentAnswerEvent(current?.filter((item): item is StudentOwnQuestionStatus => 'status' in item && item.status === 'submitted') ?? null, event));
           }
-        }} />
+        }} />}
       <StudentAnswerView sessionId={session.sessionId} groupId={group.groupId} activity={activity} submittedQuestionNumbers={answerItems?.flatMap((item) => 'status' in item && item.status === 'submitted' ? [item.questionNumber] : [])} submittedAnswers={answerItems?.flatMap((item) => 'status' in item && item.status === 'submitted' && item.answerParts ? [{ questionNumber: item.questionNumber, answerParts: item.answerParts }] : [])} />
       {activity.phase === '已結束' && answerItems && <QuestionResultList items={answerItems as WinningAnswerResult[]} />}
     </div> : <form className="mt-7 space-y-4" onSubmit={(event) => void submit(event)}>
-      <label className="block text-sm font-medium">活動加入碼<input className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3" value={activityId} onChange={(event) => setActivityId(event.target.value)} maxLength={100} autoComplete="off" /></label>
+      {session.recoveryRequired && <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">原小組已額滿，請輸入其他有空位小組的邀請碼以恢復加入。</p>}
+      <label className="block text-sm font-medium">活動加入碼<input className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 disabled:bg-slate-100" value={activityId} onChange={(event) => setActivityId(event.target.value)} maxLength={100} autoComplete="off" disabled={session.recoveryRequired} /></label>
       {renderEnrollmentFields()}
       <button className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50" disabled={busy}>{busy ? '加入中…' : '加入活動'}</button>
     </form>}

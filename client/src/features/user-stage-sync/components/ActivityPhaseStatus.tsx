@@ -30,7 +30,8 @@ export function ActivityPhaseStatus({ sessionId, activity, onUpdate, onReconnect
       (event) => {
         if (event.type === 'buzzer.question.updated') { onBuzzerUpdateRef.current?.(event); return; }
         if (event.type === 'activity.subscribed' || event.type === 'activity.phase.updated') {
-          onUpdateRef.current({ activityId: event.activityId, phase: event.phase, revision: event.revision });
+          onUpdateRef.current({ activityId: event.activityId, phase: event.phase, revision: event.revision,
+            joiningOpenedAt: 'joiningOpenedAt' in event ? event.joiningOpenedAt : activity.joiningOpenedAt });
           if (event.type === 'activity.subscribed') onReconnectRef.current?.();
         } else onLiveEventRef.current?.(event as Exclude<ActivitySocketEvent, ActivitySnapshot | BuzzerQuestionUpdatedEvent>);
       }, setConnected,

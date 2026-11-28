@@ -61,7 +61,7 @@ export function createApp(
   app.get('/health', (_request, response) => response.json({ status: 'ok' }));
   app.use(teacherRoutes(db, dependencies.teacherCredentials ?? null));
   app.use(sessionRoutes(db, publishPhase));
-  app.use(activityRoutes(db, publishPhase));
+  app.use(activityRoutes(db, publishPhase, dependencies.liveActivityPublishers?.publishRoster));
   app.use(groupRoutes(db, dependencies.liveActivityPublishers));
   app.use(answerStatusRoutes(db));
   app.use(answerAttemptCheckRoutes(db));
