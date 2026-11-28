@@ -12,12 +12,14 @@ export interface UserSession {
   groupName?: string | null;
   groupRole?: 'leader' | 'member' | null;
   groupInviteCode?: string | null;
+  recoveryRequired?: boolean;
 }
 
 export interface ActivitySnapshot {
   activityId: string;
   phase: ActivityPhase;
   revision: number;
+  joiningOpenedAt?: string | null;
 }
 
 export interface GroupRecord {
@@ -37,6 +39,7 @@ export type GroupRole = 'leader' | 'member';
 
 export interface LiveQuestionAnswerSnapshot {
   questionNumber: number;
+  displayOrder: number;
   status: 'unanswered' | 'submitted';
   answerParts?: string[];
 }
@@ -46,11 +49,11 @@ export interface LiveGroupRosterRecord {
   displayName: string;
   inviteCode?: string;
   onlineCount: number;
-  occupiedCount: number;
-  capacity: 2;
-  acceptsMembers: boolean;
+  joinStatus: GroupJoinStatus;
   answers: LiveQuestionAnswerSnapshot[];
 }
+
+export type GroupJoinStatus = '不可用' | '開放加入' | '額滿' | '停止加入';
 
 export interface TeacherActivityLiveSnapshot {
   activityId: string;
@@ -85,12 +88,10 @@ export type GroupEnrollmentRequest =
 
 export interface TeacherGroupRosterItem {
   groupId: string;
+  displayName: string;
   inviteCode: string;
-  activeSessionCount: number;
   onlineCount: number;
-  occupiedCount: number;
-  capacity: 2;
-  acceptsMembers: boolean;
+  joinStatus: GroupJoinStatus;
 }
 
 export interface ApiErrorBody {

@@ -1,4 +1,4 @@
-import type { ActivityPhase, ActivitySnapshot } from '@quiz-buzzer/shared';
+import type { ActivityPhase, ActivitySnapshot, TeacherActivityProgressResponse } from '@quiz-buzzer/shared';
 
 const DEFAULT_API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:3000';
 
@@ -32,4 +32,14 @@ export function changeActivityPhase(sessionId: string, activityId: string, phase
   return request(sessionId, `/api/activities/${encodeURIComponent(activityId)}/phase`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ phase })
   });
+}
+
+export function openActivityJoining(sessionId: string, activityId: string): Promise<ActivitySnapshot> {
+  return request(sessionId, `/api/activities/${encodeURIComponent(activityId)}/open-joining`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}'
+  });
+}
+
+export function getTeacherActivityProgress(sessionId: string, activityId: string): Promise<TeacherActivityProgressResponse> {
+  return request(sessionId, `/api/activities/${encodeURIComponent(activityId)}/teacher-progress`);
 }

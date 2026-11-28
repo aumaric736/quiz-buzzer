@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { readAnswerStatus } from '../../../server/src/features/user-stage-sync/application/answer-status-access.js';
 import { createActivity, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
 import { submitAnswer } from '../../../server/src/features/buzzer-flow/application/buzzer-flow-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
+import { enrollGroupForTest as enrollGroup } from '../../helpers/sqlite.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
@@ -42,12 +42,12 @@ describe('role-filtered answer status', () => {
       ]
     });
     expect(readAnswerStatus(db, studentAId, activityId)).toEqual({
-      phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted', answerParts: ['first', 'second'] }]
+      phase: '搶答進行中', items: [{ questionNumber: 2, displayOrder: 0, status: 'submitted', answerParts: ['first', 'second'] }]
     });
     expect(readAnswerStatus(db, studentBId, activityId)).toEqual({ phase: '搶答進行中', items: [] });
     submitAnswer(db, studentBId, activityId, { questionNumber: 2, answerParts: ['later', 'answer'] });
     expect(readAnswerStatus(db, studentBId, activityId)).toEqual({
-      phase: '搶答進行中', items: [{ questionNumber: 2, status: 'submitted', answerParts: ['later', 'answer'] }]
+      phase: '搶答進行中', items: [{ questionNumber: 2, displayOrder: 0, status: 'submitted', answerParts: ['later', 'answer'] }]
     });
     expect(readAnswerStatus(db, teacherId, activityId)).toMatchObject({
       phase: '搶答進行中', items: [

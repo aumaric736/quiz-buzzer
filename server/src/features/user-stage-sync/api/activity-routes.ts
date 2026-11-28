@@ -1,12 +1,13 @@
 import { Router, type Request } from 'express';
 import type { SqliteDatabase } from '../persistence/database.js';
-import { createActivity, getActivity, transitionActivity } from '../application/activity-service.js';
+import { createActivity, getActivity, openActivityJoining, transitionActivity } from '../application/activity-service.js';
 import { HttpError, isRecord, requireNonEmptyString } from '../../../api/validation.js';
 import type { ActivityPhaseUpdatedEvent } from '@quiz-buzzer/shared';
 import { activityOperationQueue } from '../../buzzer-flow/application/activity-operation-queue.js';
 import { recordActivityOperation } from '../../buzzer-flow/persistence/activity-operation-repository.js';
 
 type PhasePublisher = (event: ActivityPhaseUpdatedEvent) => void;
+type RosterPublisher = (activityId: string) => void;
 
 function requestSessionId(request: Request): string {
   const value = request.header('X-Local-Session-Id');
@@ -14,7 +15,7 @@ function requestSessionId(request: Request): string {
   return value;
 }
 
-export function activityRoutes(db: SqliteDatabase, publishPhase: PhasePublisher = () => undefined): Router {
+export function activityRoutes(db: SqliteDatabase, publishPhase: PhasePublisher = () => undefined, publishRoster: RosterPublisher = () => undefined): Router {
   const router = Router();
   router.post('/api/activities', (request, response, next) => {
     try {
@@ -33,6 +34,15 @@ export function activityRoutes(db: SqliteDatabase, publishPhase: PhasePublisher 
       response.json(getActivity(db, activityId));
     } catch (error) { next(error); }
   });
+  router.post('/api/activities/:activityId/open-joining', (request, response, next) => {
+    try {
+      if (!isRecord(request.body) || Object.keys(request.body).length !== 0) throw new HttpError(400, 'INVALID_REQUEST_BODY', '開放加入不需要額外欄位。');
+      const activityId = requireNonEmptyString(request.params.activityId, 'activityId', 100);
+      const snapshot = openActivityJoining(db, requestSessionId(request), activityId);
+      publishRoster(activityId);
+      response.json(snapshot);
+    } catch (error) { next(error); }
+  });
   router.post('/api/activities/:activityId/phase', async (request, response, next) => {
     try {
       if (!isRecord(request.body) || Object.keys(request.body).length !== 1 || !('phase' in request.body)) throw new HttpError(409, 'INVALID_PHASE_TRANSITION', '請提供有效的下一個活動階段。');
@@ -45,6 +55,7 @@ export function activityRoutes(db: SqliteDatabase, publishPhase: PhasePublisher 
         })
         : transitionActivity(db, sessionId, activityId, request.body.phase);
       publishPhase({ type: 'activity.phase.updated', ...snapshot });
+      publishRoster(activityId);
       response.json(snapshot);
     } catch (error) { next(error); }
   });

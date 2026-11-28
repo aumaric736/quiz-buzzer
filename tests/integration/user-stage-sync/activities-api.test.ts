@@ -35,6 +35,7 @@ describe('activity API', () => {
     const activity = await created.json() as { activityId: string; phase: string; revision: number };
     expect(activity).toMatchObject({ phase: '準備中', revision: 0 });
     seedGuidedNotesQuestions(db, activity.activityId);
+    expect((await post(`/api/activities/${activity.activityId}/open-joining`, teacher.sessionId, {})).status).toBe(200);
     expect(db.prepare('SELECT activity_id FROM user_sessions WHERE id = ?').get(teacher.sessionId)).toEqual({ activity_id: activity.activityId });
     expect((await fetch(`${baseUrl}/api/activities/${activity.activityId}`, { headers: { 'X-Local-Session-Id': teacher.sessionId } })).status).toBe(200);
     expect((await post(`/api/activities/${activity.activityId}/phase`, teacher.sessionId, { phase: '搶答進行中' })).status).toBe(200);
@@ -62,6 +63,7 @@ describe('activity API', () => {
     const created = await post('/api/activities', teacher.sessionId, {});
     const activity = await created.json() as { activityId: string };
     seedGuidedNotesQuestions(db, activity.activityId);
+    expect((await post(`/api/activities/${activity.activityId}/open-joining`, teacher.sessionId, {})).status).toBe(200);
     const joined = await post(`/api/activities/${activity.activityId}/groups`, student.sessionId, { groupName: 'Green Team' });
     expect(joined.status).toBe(201);
     await post(`/api/activities/${activity.activityId}/phase`, teacher.sessionId, { phase: '搶答進行中' });

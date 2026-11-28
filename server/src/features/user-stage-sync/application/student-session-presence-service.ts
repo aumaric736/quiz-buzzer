@@ -1,7 +1,7 @@
 import type { SqliteDatabase } from '../persistence/database.js';
 
-const RETENTION_MS = 2 * 60 * 1000;
-const timers = new Map<string, ReturnType<typeof setTimeout>>();
+export const STUDENT_OFFLINE_GRACE_MS = 30_000;
+const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let presencePublisher: ((activityId: string, groupId: string) => void) | undefined;
 let rosterPublisher: ((activityId: string) => void) | undefined;
 
@@ -21,88 +21,89 @@ function incrementLiveRevisions(db: SqliteDatabase, groupId: string): void {
   db.prepare('UPDATE activities SET live_revision = live_revision + 1 WHERE id = (SELECT activity_id FROM groups WHERE id = ?)').run(groupId);
 }
 
-function scheduleExpiry(db: SqliteDatabase, sessionId: string, until: string): void {
-  const previous = timers.get(sessionId);
-  if (previous) clearTimeout(previous);
-  const timer = setTimeout(() => {
-    const row = db.open ? db.prepare('SELECT disconnected_until FROM user_sessions WHERE id = ?').get(sessionId) as { disconnected_until: string | null } | undefined : undefined;
-    if (row?.disconnected_until && Date.parse(row.disconnected_until) <= Date.now()) expireStudentSession(db, sessionId);
-    timers.delete(sessionId);
-  }, Math.max(0, Date.parse(until) - Date.now()));
-  timer.unref?.();
-  timers.set(sessionId, timer);
+function clearPendingDisconnect(sessionId: string): void {
+  const timer = disconnectTimers.get(sessionId);
+  if (timer) clearTimeout(timer);
+  disconnectTimers.delete(sessionId);
 }
 
-export function markStudentDisconnected(db: SqliteDatabase, sessionId: string, now = new Date()): void {
-  const until = new Date(now.getTime() + RETENTION_MS).toISOString();
+function classifyOffline(db: SqliteDatabase, sessionId: string, now: Date): void {
   const disconnect = db.transaction(() => {
-    const row = db.prepare("SELECT group_id AS groupId, disconnected_until AS disconnectedUntil FROM user_sessions WHERE id = ? AND role = 'student' AND retired_at IS NULL").get(sessionId) as
-      { groupId: string | null; disconnectedUntil: string | null } | undefined;
-    if (!row || row.disconnectedUntil || !row.groupId) return null;
-    db.prepare("UPDATE user_sessions SET disconnected_until = ?, updated_at = ? WHERE id = ? AND role = 'student' AND retired_at IS NULL")
-      .run(until, now.toISOString(), sessionId);
+    const row = db.prepare("SELECT group_id AS groupId, disconnected_at AS disconnectedAt FROM user_sessions WHERE id = ? AND role = 'student' AND retired_at IS NULL")
+      .get(sessionId) as { groupId: string | null; disconnectedAt: string | null } | undefined;
+    if (!row || row.disconnectedAt || !row.groupId) return null;
+    db.prepare("UPDATE user_sessions SET disconnected_at = ?, disconnected_until = NULL, updated_at = ? WHERE id = ? AND role = 'student' AND retired_at IS NULL")
+      .run(now.toISOString(), now.toISOString(), sessionId);
     incrementLiveRevisions(db, row.groupId);
     return row.groupId;
   });
-  const groupId = disconnect.immediate();
-  if (!groupId) return;
-  scheduleExpiry(db, sessionId, until);
-  publishPresenceChange(db, groupId);
+  publishPresenceChange(db, disconnect.immediate());
 }
 
+/** Clean closes classify immediately; unclean drops wait for the remaining heartbeat grace. */
+export function markStudentDisconnected(db: SqliteDatabase, sessionId: string, now = new Date(), delayMs = 0): void {
+  clearPendingDisconnect(sessionId);
+  if (delayMs <= 0) { classifyOffline(db, sessionId, now); return; }
+  const timer = setTimeout(() => {
+    disconnectTimers.delete(sessionId);
+    if (db.open) classifyOffline(db, sessionId, new Date());
+  }, delayMs);
+  timer.unref?.();
+  disconnectTimers.set(sessionId, timer);
+}
+
+/** Restore a returning member immediately when possible. During formation a full original group
+ * leaves the session offline so the student can choose another group through enrollment. */
 export function restoreStudentPresence(db: SqliteDatabase, sessionId: string, now = new Date()): boolean {
   const restore = db.transaction(() => {
-    const row = db.prepare("SELECT disconnected_until AS disconnectedUntil, retired_at AS retiredAt, group_id AS groupId, group_role AS groupRole FROM user_sessions WHERE id = ? AND role = 'student'").get(sessionId) as
-      { disconnectedUntil: string | null; retiredAt: string | null; groupId: string | null; groupRole: string | null } | undefined;
+    const row = db.prepare(`SELECT s.disconnected_at AS disconnectedAt, s.disconnected_until AS legacyDeadline,
+        s.retired_at AS retiredAt, s.group_id AS groupId, a.phase AS phase
+      FROM user_sessions s LEFT JOIN activities a ON a.id = s.activity_id
+      WHERE s.id = ? AND s.role = 'student'`).get(sessionId) as
+      { disconnectedAt: string | null; legacyDeadline: string | null; retiredAt: string | null; groupId: string | null; phase: string | null } | undefined;
     if (!row || row.retiredAt) return { valid: false, changedGroupId: null as string | null };
-    if (!row.disconnectedUntil) return { valid: true, changedGroupId: null as string | null };
-    if (Date.parse(row.disconnectedUntil) <= now.getTime()) {
-      if (row.groupId) {
-        if (row.groupRole === 'leader') db.prepare('UPDATE groups SET accepts_members = 0 WHERE id = ?').run(row.groupId);
-        db.prepare('UPDATE user_sessions SET activity_id = NULL, group_id = NULL, disconnected_until = NULL, retired_at = ?, updated_at = ? WHERE id = ?')
-          .run(now.toISOString(), now.toISOString(), sessionId);
-        incrementLiveRevisions(db, row.groupId);
-      }
-      return { valid: false, changedGroupId: row.groupId };
+    if (!row.disconnectedAt && !row.legacyDeadline) return { valid: true, changedGroupId: null as string | null };
+    if (row.phase === '已結束') return { valid: false, changedGroupId: null as string | null };
+
+    if (row.groupId && row.phase === '準備中') {
+      const online = (db.prepare(`SELECT COUNT(*) AS count FROM user_sessions
+        WHERE group_id = ? AND role = 'student' AND retired_at IS NULL
+          AND disconnected_at IS NULL AND id <> ?`).get(row.groupId, sessionId) as { count: number }).count;
+      if (online >= 2) return { valid: true, changedGroupId: null as string | null };
     }
-    db.prepare("UPDATE user_sessions SET disconnected_until = NULL, updated_at = ? WHERE id = ? AND role = 'student' AND retired_at IS NULL")
+
+    db.prepare("UPDATE user_sessions SET disconnected_at = NULL, disconnected_until = NULL, updated_at = ? WHERE id = ? AND role = 'student' AND retired_at IS NULL")
       .run(now.toISOString(), sessionId);
     if (row.groupId) incrementLiveRevisions(db, row.groupId);
     return { valid: true, changedGroupId: row.groupId };
   });
   const outcome = restore.immediate();
-  const timer = timers.get(sessionId); if (timer) clearTimeout(timer); timers.delete(sessionId);
+  clearPendingDisconnect(sessionId);
   publishPresenceChange(db, outcome.changedGroupId);
   return outcome.valid;
 }
 
+/** Compatibility name for callers that reconcile old deadline records; membership is never retired here. */
 export function expireStudentSession(db: SqliteDatabase, sessionId: string, now = new Date()): void {
-  const expire = db.transaction(() => {
-    const row = db.prepare("SELECT group_id AS groupId, group_role AS groupRole, disconnected_until AS disconnectedUntil FROM user_sessions WHERE id = ? AND role = 'student' AND retired_at IS NULL").get(sessionId) as { groupId: string | null; groupRole: string | null; disconnectedUntil: string | null } | undefined;
-    if (!row || !row.groupId || !row.disconnectedUntil || Date.parse(row.disconnectedUntil) > now.getTime()) return null;
-    if (row.groupRole === 'leader') db.prepare('UPDATE groups SET accepts_members = 0 WHERE id = ?').run(row.groupId);
-    db.prepare('UPDATE user_sessions SET activity_id = NULL, group_id = NULL, disconnected_until = NULL, retired_at = ?, updated_at = ? WHERE id = ?')
-      .run(now.toISOString(), now.toISOString(), sessionId);
-    incrementLiveRevisions(db, row.groupId);
-    return row.groupId;
-  });
-  const groupId = expire.immediate();
-  publishPresenceChange(db, groupId);
-  const timer = timers.get(sessionId); if (timer) clearTimeout(timer); timers.delete(sessionId);
+  clearPendingDisconnect(sessionId);
+  classifyOffline(db, sessionId, now);
 }
 
-export function reconcileExpiredStudentSessions(db: SqliteDatabase, now = new Date()): number {
-  const rows = db.prepare("SELECT id FROM user_sessions WHERE role = 'student' AND retired_at IS NULL AND disconnected_until IS NOT NULL AND disconnected_until <= ?")
-    .all(now.toISOString()) as Array<{ id: string }>;
-  rows.forEach(({ id }) => expireStudentSession(db, id, now));
+export function reconcileExpiredStudentSessions(db: SqliteDatabase, _now = new Date()): number {
+  const rows = db.prepare(`SELECT id, group_id AS groupId, updated_at AS updatedAt FROM user_sessions
+    WHERE role = 'student' AND retired_at IS NULL AND disconnected_until IS NOT NULL AND disconnected_at IS NULL`).all() as
+    Array<{ id: string; groupId: string | null; updatedAt: string }>;
+  const reconcile = db.transaction(() => {
+    for (const row of rows) {
+      db.prepare('UPDATE user_sessions SET disconnected_at = ?, disconnected_until = NULL WHERE id = ? AND disconnected_at IS NULL')
+        .run(row.updatedAt, row.id);
+      if (row.groupId) incrementLiveRevisions(db, row.groupId);
+    }
+  });
+  reconcile.immediate();
   return rows.length;
 }
 
 export function schedulePendingStudentExpirations(db: SqliteDatabase, now = new Date()): void {
-  const rows = db.prepare("SELECT id, disconnected_until FROM user_sessions WHERE role = 'student' AND retired_at IS NULL AND disconnected_until IS NOT NULL")
-    .all() as Array<{ id: string; disconnected_until: string }>;
-  for (const row of rows) {
-    if (Date.parse(row.disconnected_until) <= now.getTime()) expireStudentSession(db, row.id, now);
-    else scheduleExpiry(db, row.id, row.disconnected_until);
-  }
+  reconcileExpiredStudentSessions(db, now);
 }

@@ -1,0 +1,94 @@
+@startuml
+title 小組加入、即時作答檢視與學習單匯入 - Domain Model
+class Activity {
+  activityId
+  phase: preparing / answering / ended
+  joiningOpenedAt: nullable timestamp
+  activityLiveRevision
+}
+class WorksheetQuestion {
+  rowId
+  sourceQuestionNumber: question_number
+  displayOrder: display_order
+  sourceSheet
+  sourceRow
+}
+class AnswerMapping {
+  slotIndex: zero-based contiguous
+  sourceCellOrRange
+}
+class Team {
+  groupId
+  displayName
+  onlineCount
+  joinState: unavailable / open / full / stopped
+  groupLiveRevision
+}
+class MemberSession {
+  sessionId
+  role: leader / member
+  connectionState: online / disconnected
+  disconnectedAt
+}
+class TeamAnswer {
+  sourceQuestionNumber
+  status: unanswered / valid submission
+  answerParts
+  currentRank
+}
+class QuestionProgress {
+  sourceQuestionNumber
+  answeredGroupCount
+  totalGroupCount
+  answeredAndUnansweredGroups
+}
+Activity "1" o-- "0..*" WorksheetQuestion
+WorksheetQuestion "1" o-- "1..*" AnswerMapping
+Activity "1" o-- "0..*" Team
+Team "1" o-- "0..2" MemberSession
+WorksheetQuestion "1" o-- "0..*" TeamAnswer
+Team "1" o-- "0..*" TeamAnswer
+Activity "1" o-- "1..*" QuestionProgress
+note right of Activity
+  Keep only three lifecycle phases.
+  During preparing, the teacher may edit/import
+  until explicitly opening joining.
+  Open action validates readiness and atomically
+  sets joiningOpenedAt and freezes the question set.
+  Migration 009 backfills that marker for preparing
+  activities only when membership and question readiness exist.
+  Incomplete legacy sets stay editable with joining closed.
+  The activity remains preparing; student team view
+  retains its existing presentation.
+  Answering: no new join, existing reconnect unlimited.
+  Ended: participation stops; authorized results remain.
+end note
+note right of WorksheetQuestion
+  Preserve worksheet order and source number.
+  Gaps are valid; a missing/duplicate number on a
+  question row rejects the complete import.
+  New imports persist document order; migration 009
+  backfills legacy order by ascending source number.
+  Question number remains the answer/mapping business key.
+  Mapping slot index is independent of source number.
+end note
+note right of MemberSession
+  Clean close: offline immediately.
+  Unclean drop: 30s without heartbeat.
+  Team phase releases online vacancy; association retained.
+  Legacy disconnected_until maps to disconnectedAt
+  using the stored updatedAt timestamp.
+  Answering retains membership without expiry.
+end note
+note right of Team
+  Team formation after joining opens: open with a vacancy,
+  full at two online members. Offline transition can reopen it.
+  The teacher roster exposes onlineCount, not capacity fields.
+end note
+note right of QuestionProgress
+  Denominator includes offline groups.
+  Valid first submissions rank by feature 004 order.
+  Question lists and result displays follow displayOrder.
+  Active student view is own-team only.
+end note
+@enduml

@@ -4,7 +4,7 @@ import WebSocket from 'ws';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../../server/src/app.js';
 import { createActivity, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
+import { enrollGroupForTest as enrollGroup } from '../../helpers/sqlite.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
@@ -40,6 +40,7 @@ describe('student answer privacy', () => {
     expect(JSON.stringify(body)).not.toContain('other group answer');
     expect(JSON.stringify(body)).not.toContain('Private Team B');
     expect(JSON.stringify(body)).not.toMatch(/winner|count|sequence|rank|groupId/i);
+    expect(JSON.stringify(body)).not.toContain('answerParts');
     const teacherStatus = await fetch(`${baseUrl}/api/activities/${activityId}/answer-status`, { headers: { 'X-Local-Session-Id': teacherId } });
     expect(JSON.stringify(await teacherStatus.json())).toContain('other group answer');
   });
@@ -47,7 +48,7 @@ describe('student answer privacy', () => {
   it('returns only the requesting group answer on its live status response', async () => {
     await fetch(`${baseUrl}/api/activities/${activityId}/answers`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Local-Session-Id': studentId }, body: JSON.stringify({ questionNumber: 1, answerParts: ['  original spacing  '] }) });
     const response = await fetch(`${baseUrl}/api/activities/${activityId}/answer-status`, { headers: { 'X-Local-Session-Id': studentId } });
-    expect(await response.json()).toMatchObject({ items: [{ questionNumber: 1, status: 'submitted', answerParts: ['  original spacing  '] }] });
+    expect(await response.json()).toMatchObject({ items: [{ questionNumber: 1, displayOrder: 0, status: 'submitted', answerParts: ['  original spacing  '] }] });
   });
 
   it('sends answer updates to the teacher socket only', async () => {
@@ -72,8 +73,12 @@ describe('student answer privacy', () => {
     await fetch(`${serverAddress(server)}/api/activities/${activityId}/answers`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Local-Session-Id': otherStudentId }, body: JSON.stringify({ questionNumber: 1, answerParts: ['broadcast answer'] }) });
     expect(await teacherEvent).toContain('broadcast answer');
     const studentEvent = new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => resolve(false), 100);
-      student.once('message', () => { clearTimeout(timer); resolve(true); });
+      const timer = setTimeout(() => resolve(false), 150);
+      student.once('message', (message) => {
+        clearTimeout(timer);
+        const payload = message.toString();
+        resolve(payload.includes('broadcast answer') || payload.includes('Private Team B') || /submissionRank|answeredGroupCount|unansweredGroups/.test(payload));
+      });
     });
     expect(await studentEvent).toBe(false);
   });

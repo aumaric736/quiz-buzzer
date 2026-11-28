@@ -2,7 +2,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../../server/src/app.js';
-import { createActivity, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
+import { createActivity, openActivityJoining, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
 
@@ -17,6 +17,8 @@ describe('two active membership sessions per group', () => {
     const teacher = createSession(db, 'teacher');
     teacherId = teacher.sessionId;
     activityId = createActivity(db, teacherId).activityId;
+    seedGuidedNotesQuestions(db, activityId);
+    openActivityJoining(db, teacherId, activityId);
     server = createApp(db).listen(0, '127.0.0.1');
     await new Promise<void>((resolve) => server.once('listening', resolve));
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -68,12 +70,11 @@ describe('two active membership sessions per group', () => {
       headers: { 'X-Local-Session-Id': teacherId }
     });
     expect(rosterResponse.status).toBe(200);
-    const roster = await rosterResponse.json() as { items: Array<{ groupId: string; activeSessionCount: number }> };
+    const roster = await rosterResponse.json() as { items: Array<{ groupId: string; onlineCount: number; joinStatus: string }> };
     expect(roster.items).toHaveLength(100);
-    expect(roster.items.every((item) => item.activeSessionCount === 2)).toBe(true);
+    expect(roster.items.every((item) => item.onlineCount === 2 && item.joinStatus === '額滿')).toBe(true);
     expect(new Set(roster.items.map((item) => item.groupId))).toEqual(new Set(groups.map((group) => group.groupId)));
 
-    seedGuidedNotesQuestions(db, activityId);
     transitionActivity(db, teacherId, activityId, '搶答進行中');
     for (let index = 0; index < groups.length; index += 1) {
       const group = groups[index]!;
@@ -90,7 +91,7 @@ describe('two active membership sessions per group', () => {
       });
       expect(sharedStatus.status).toBe(200);
       expect(await sharedStatus.json()).toEqual({
-        phase: '搶答進行中', items: [{ questionNumber: 1, status: 'submitted', answerParts }]
+        phase: '搶答進行中', items: [{ questionNumber: 1, displayOrder: 0, status: 'submitted', answerParts }]
       });
     }
 

@@ -4,6 +4,7 @@ import type { SqliteDatabase } from '../../user-stage-sync/persistence/database.
 
 interface QuestionRow {
   questionNumber: number;
+  displayOrder: number;
   blankCount: number;
   firstSlot: number | null;
   lastSlot: number | null;
@@ -29,14 +30,14 @@ export function listOwnedActivities(db: SqliteDatabase, ownerSessionId: string):
 }
 
 export function loadReviewRecords(db: SqliteDatabase, activityId: string): TeacherReviewRecordsResponse {
-  const questionRows = db.prepare(`SELECT q.question_number AS questionNumber, COUNT(m.slot_order) AS blankCount,
+  const questionRows = db.prepare(`SELECT q.question_number AS questionNumber, q.display_order AS displayOrder, COUNT(m.slot_order) AS blankCount,
       MIN(m.slot_order) AS firstSlot, MAX(m.slot_order) AS lastSlot
     FROM activity_questions q
     LEFT JOIN guided_notes_sources s ON s.activity_id = q.activity_id
     LEFT JOIN guided_notes_blank_mappings m
       ON m.source_id = s.id AND m.activity_id = q.activity_id AND m.question_number = q.question_number
     WHERE q.activity_id = ?
-    GROUP BY q.question_number ORDER BY q.question_number`).all(activityId) as QuestionRow[];
+    GROUP BY q.question_number ORDER BY q.display_order`).all(activityId) as QuestionRow[];
   if (questionRows.length === 0 || questionRows.some((question) => question.blankCount < 1
     || question.firstSlot !== 0 || question.lastSlot !== question.blankCount - 1)) invalidRecords();
 

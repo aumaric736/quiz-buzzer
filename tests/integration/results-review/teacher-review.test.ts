@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../../server/src/app.js';
 import { createActivity, transitionActivity } from '../../../server/src/features/user-stage-sync/application/activity-service.js';
-import { enrollGroup } from '../../../server/src/features/user-stage-sync/application/group-service.js';
+import { enrollGroupForTest as enrollGroup } from '../../helpers/sqlite.js';
 import { createSession } from '../../../server/src/features/user-stage-sync/application/session-service.js';
 import type { SqliteDatabase } from '../../../server/src/features/user-stage-sync/persistence/database.js';
 import { createTestDatabase, seedGuidedNotesQuestions } from '../../helpers/sqlite.js';
@@ -24,6 +24,7 @@ describe('teacher submission review API', () => {
     studentIds = [createSession(db, 'student').sessionId, createSession(db, 'student').sessionId];
     activityId = createActivity(db, teacherId).activityId;
     seedGuidedNotesQuestions(db, activityId, [2, 5, 9], 1);
+    db.prepare('UPDATE activity_questions SET display_order = CASE question_number WHEN 5 THEN 0 WHEN 2 THEN 1 ELSE 2 END WHERE activity_id = ?').run(activityId);
     enrollGroup(db, studentIds[0], activityId, 'Blue Team');
     enrollGroup(db, studentIds[1], activityId, 'Green Team');
     server = createApp(db).listen(0, '127.0.0.1');
@@ -64,12 +65,12 @@ describe('teacher submission review API', () => {
     const firstBody = await first.json();
     expect(firstBody).toEqual({
       activityId, phase: '已結束', questions: [
+        { questionNumber: 5, unanswered: false, records: [
+          { submissionRank: 1, groupId: expect.any(String), groupName: 'Green Team', answerParts: ['first on five'], isWinner: true }
+        ] },
         { questionNumber: 2, unanswered: false, records: [
           { submissionRank: 1, groupId: expect.any(String), groupName: 'Blue Team', answerParts: ['winner'], isWinner: true },
           { submissionRank: 2, groupId: expect.any(String), groupName: 'Green Team', answerParts: ['later'], isWinner: false }
-        ] },
-        { questionNumber: 5, unanswered: false, records: [
-          { submissionRank: 1, groupId: expect.any(String), groupName: 'Green Team', answerParts: ['first on five'], isWinner: true }
         ] },
         { questionNumber: 9, unanswered: true, records: [] }
       ]

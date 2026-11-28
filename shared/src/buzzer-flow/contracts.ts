@@ -3,6 +3,7 @@ import type { ActivityPhase } from '../user-stage-sync/contracts.js';
 
 export interface BuzzerQuestionPrompt {
   questionNumber: number;
+  displayOrder: number;
   blankCount: number;
 }
 
@@ -35,6 +36,7 @@ export type TeacherQuestionStatus =
 
 export interface StudentOwnQuestionStatus {
   questionNumber: number;
+  displayOrder: number;
   status: 'submitted';
   answerParts?: string[];
 }
@@ -74,6 +76,7 @@ export interface BuzzerQuestionUpdatedEvent {
   type: 'buzzer.question.updated';
   activityId: string;
   questionNumber: number;
+  displayOrder: number;
   status: 'submitted' | 'won';
   groupId: string;
   groupName: string;
@@ -84,6 +87,7 @@ export interface BuzzerQuestionUpdatedEvent {
 
 export interface TeamQuestionAnswerSnapshot {
   questionNumber: number;
+  displayOrder: number;
   status: 'unanswered' | 'submitted';
   answerParts?: string[];
 }
@@ -94,6 +98,7 @@ export interface TeamAnswerUpdatedEvent {
   groupId: string;
   groupLiveRevision: number;
   questionNumber: number;
+  displayOrder: number;
   status: 'submitted';
   answerParts: string[];
 }
@@ -107,6 +112,32 @@ export interface ActivityTeamAnswerUpdatedEvent {
   questionNumber: number;
   status: 'submitted';
   answerParts: string[];
+  questionProgress: TeacherQuestionProgress;
+}
+
+export interface TeacherQuestionProgressGroup {
+  groupId: string;
+  groupName: string;
+}
+
+export interface TeacherAnsweredGroupProgress extends TeacherQuestionProgressGroup {
+  answerParts: string[];
+  submissionRank: number;
+}
+
+export interface TeacherQuestionProgress {
+  questionNumber: number;
+  displayOrder: number;
+  answeredGroupCount: number;
+  totalGroupCount: number;
+  answeredGroups: TeacherAnsweredGroupProgress[];
+  unansweredGroups: TeacherQuestionProgressGroup[];
+}
+
+export interface TeacherActivityProgressResponse {
+  activityId: string;
+  activityLiveRevision: number;
+  questions: TeacherQuestionProgress[];
 }
 
 export type BuzzerActivityPhase = ActivityPhase;

@@ -1,0 +1,76 @@
+@startuml
+title 小組加入、即時作答檢視與學習單匯入 - Join Opening, Presence and Live Answer Flow
+actor Teacher
+actor Student
+participant "React UI" as UI
+participant "Guided Notes Import Service" as Import
+participant "Activity / Group Service" as Activity
+participant "Buzzer Flow Service" as Buzzer
+database "SQLite" as DB
+participant "Authenticated WebSocket / Presence Monitor" as Live
+participant "Role-scoped Events" as Events
+participant "Feature 004 Results" as Results
+
+Teacher -> UI : import/replace worksheet while joining is closed
+UI -> Import : request import
+Import -> DB : confirm phase preparing and joiningOpenedAt is null
+Import -> Import : recognize headers/merged structure; validate all rows
+alt unique structure and valid question numbers
+  Import -> DB : transaction: replace set, mappings, and display_order
+  DB --> Import : committed document order and source numbers
+else invalid numbers or ambiguous structure
+  Import --> UI : sheet/row diagnostic; no partial writes
+end
+
+Teacher -> UI : press 開放加入
+UI -> Activity : open team enrollment
+Activity -> DB : validate teacher, preparing phase, ready questions
+alt questions are ready
+  Activity -> DB : atomic set joiningOpenedAt and lock question set
+  DB --> Activity : committed open state; phase remains 準備中
+  Activity -> Events : publish committed join/roster state
+  Events --> UI : teacher sees authoritative join status
+else questions are not ready
+  Activity --> UI : reject; enrollment remains closed
+end
+Student -> UI : request to join
+UI -> Activity : enroll using activity/group
+Activity -> DB : require joiningOpenedAt, preparing phase, online capacity
+DB --> Activity : commit membership and revisions
+Activity -> Events : publish after commit
+Events --> UI : authorized online count/join state
+note over Student,UI : Keep the current team-formation screen; add no total-question count or question preview.
+
+alt clean connection close
+  Student -> Live : close connection cleanly
+  Live -> Activity : mark offline immediately
+else unclean network interruption
+  Student -> Live : connection drops
+  Live -> Live : wait 30 consecutive seconds without heartbeat
+  Live -> Activity : classify offline
+end
+Activity -> DB : persist offline; apply phase-specific membership policy
+DB --> Activity : commit online count and revisions
+Activity -> Events : publish committed presence
+group Activity : Phase behavior
+  note over DB : Preparing after open: free vacancy; recover original role if space remains.
+  note over DB : Answering: no new enrollment; existing reconnect is unlimited.
+end
+
+Student -> UI : submit answer during answering
+UI -> Buzzer : submit answer for stored student identity
+Buzzer -> DB : validate and persist first valid answer/rank
+DB --> Buzzer : committed progress and revision
+Buzzer -> Events : publish teacher-wide and own-team updates
+Events --> UI : teacher counts, groups, answer, rank; own-team student view
+note over Buzzer,Events
+  After commit, authorized views render within 2s.
+  Denominator includes offline groups; later valid teams retain subsequent rank.
+end note
+
+Teacher -> UI : end activity
+UI -> Activity : transition to 已結束
+Activity -> DB : commit ended phase and stable results
+Student -> Results : read saved results if authorized
+Teacher -> Results : review saved results
+@enduml

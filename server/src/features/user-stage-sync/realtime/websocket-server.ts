@@ -5,7 +5,9 @@ import type {
 } from '@quiz-buzzer/shared';
 import type { WebSocket, WebSocketServer } from 'ws';
 import type { SqliteDatabase } from '../persistence/database.js';
-import { markStudentDisconnected, restoreStudentPresence } from '../application/student-session-presence-service.js';
+import { getTeacherQuestionProgress } from '../../buzzer-flow/persistence/buzzer-flow-repository.js';
+import { getActivityJoinContext, resolveGroupJoinStatus } from '../persistence/group-repository.js';
+import { markStudentDisconnected, restoreStudentPresence, STUDENT_OFFLINE_GRACE_MS } from '../application/student-session-presence-service.js';
 import { markTeacherDisconnected, restoreTeacherPresence } from '../application/teacher-presence-service.js';
 
 interface Subscription { activityId: string; sessionId: string }
@@ -33,30 +35,31 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
   publishBuzzerQuestion: (event: BuzzerQuestionUpdatedEvent) => void;
 } & ActivityLivePublishers {
   const subscriptions = new Map<WebSocket, Subscription>();
+  const heartbeatTimers = new Map<WebSocket, ReturnType<typeof setInterval>>();
 
   function listAnswers(activityId: string, groupId: string): LiveQuestionAnswerSnapshot[] {
-    const rows = db.prepare(`SELECT q.question_number AS questionNumber, b.answer_parts_json AS answerPartsJson
+    const rows = db.prepare(`SELECT q.question_number AS questionNumber, q.display_order AS displayOrder, b.answer_parts_json AS answerPartsJson
       FROM activity_questions q
       LEFT JOIN buzzer_submissions b ON b.activity_id = q.activity_id
         AND b.question_number = q.question_number AND b.group_id = ?
-      WHERE q.activity_id = ? ORDER BY q.question_number`).all(groupId, activityId) as
-      Array<{ questionNumber: number; answerPartsJson: string | null }>;
+      WHERE q.activity_id = ? ORDER BY q.display_order`).all(groupId, activityId) as
+      Array<{ questionNumber: number; displayOrder: number; answerPartsJson: string | null }>;
     return rows.map((row) => row.answerPartsJson === null
-      ? { questionNumber: row.questionNumber, status: 'unanswered' }
-      : { questionNumber: row.questionNumber, status: 'submitted', answerParts: JSON.parse(row.answerPartsJson) as string[] });
+      ? { questionNumber: row.questionNumber, displayOrder: row.displayOrder, status: 'unanswered' }
+      : { questionNumber: row.questionNumber, displayOrder: row.displayOrder, status: 'submitted', answerParts: JSON.parse(row.answerPartsJson) as string[] });
   }
 
   function listRosterGroups(activityId: string): LiveGroupRosterRecord[] {
+    const context = getActivityJoinContext(db, activityId);
     const rows = db.prepare(`SELECT g.id AS groupId, g.display_name AS displayName, g.invite_code AS inviteCode,
         g.accepts_members AS acceptsMembers,
         (SELECT count(*) FROM user_sessions s WHERE s.group_id = g.id AND s.role = 'student'
-          AND s.retired_at IS NULL AND s.disconnected_until IS NULL) AS onlineCount,
-        (SELECT count(*) FROM user_sessions s WHERE s.group_id = g.id AND s.role = 'student' AND s.retired_at IS NULL) AS occupiedCount
+        AND s.retired_at IS NULL AND s.disconnected_at IS NULL) AS onlineCount
       FROM groups g WHERE g.activity_id = ? ORDER BY g.joined_at, g.id`).all(activityId) as Array<{
-        groupId: string; displayName: string; inviteCode: string; acceptsMembers: number; onlineCount: number; occupiedCount: number
+        groupId: string; displayName: string; inviteCode: string; acceptsMembers: number; onlineCount: number
       }>;
     return rows.map((row) => ({ groupId: row.groupId, displayName: row.displayName, inviteCode: row.inviteCode,
-      onlineCount: row.onlineCount, occupiedCount: row.occupiedCount, capacity: 2, acceptsMembers: row.acceptsMembers === 1,
+      onlineCount: row.onlineCount, joinStatus: resolveGroupJoinStatus(context, row.onlineCount, row.acceptsMembers === 1),
       answers: listAnswers(activityId, row.groupId) }));
   }
 
@@ -71,7 +74,7 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
     const row = db.prepare(`SELECT g.id AS groupId, g.display_name AS displayName, g.accepts_members AS acceptsMembers,
         g.live_revision AS liveRevision, s.group_role AS groupRole,
         (SELECT count(*) FROM user_sessions online WHERE online.group_id = g.id AND online.role = 'student'
-          AND online.retired_at IS NULL AND online.disconnected_until IS NULL) AS onlineCount,
+          AND online.retired_at IS NULL AND online.disconnected_at IS NULL) AS onlineCount,
         (SELECT count(*) FROM user_sessions occupied WHERE occupied.group_id = g.id AND occupied.role = 'student'
           AND occupied.retired_at IS NULL) AS occupiedCount
       FROM groups g JOIN user_sessions s ON s.group_id = g.id
@@ -121,24 +124,43 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
   };
 
   const publishTeamAnswer = (activityId: string, groupId: string, questionNumber: number) => {
-    const submission = db.prepare(`SELECT b.answer_parts_json AS answerPartsJson, g.display_name AS groupName,
+    const submission = db.prepare(`SELECT b.answer_parts_json AS answerPartsJson, g.display_name AS groupName, q.display_order AS displayOrder,
         g.live_revision AS groupLiveRevision, a.live_revision AS activityLiveRevision
       FROM buzzer_submissions b JOIN groups g ON g.id = b.group_id JOIN activities a ON a.id = b.activity_id
+      JOIN activity_questions q ON q.activity_id = b.activity_id AND q.question_number = b.question_number
       WHERE b.activity_id = ? AND b.group_id = ? AND b.question_number = ?`)
-      .get(activityId, groupId, questionNumber) as { answerPartsJson: string; groupName: string; groupLiveRevision: number;
+      .get(activityId, groupId, questionNumber) as { answerPartsJson: string; groupName: string; displayOrder: number; groupLiveRevision: number;
         activityLiveRevision: number } | undefined;
     if (!submission) return;
     const answerParts = JSON.parse(submission.answerPartsJson) as string[];
     const teamEvent: TeamAnswerUpdatedEvent = { type: 'team.answer.updated', activityId, groupId,
-      groupLiveRevision: submission.groupLiveRevision, questionNumber, status: 'submitted', answerParts };
+      groupLiveRevision: submission.groupLiveRevision, questionNumber, displayOrder: submission.displayOrder, status: 'submitted', answerParts };
     const teacherEvent: ActivityTeamAnswerUpdatedEvent = { type: 'activity.team-answer.updated', activityId,
       activityLiveRevision: submission.activityLiveRevision, groupId, groupName: submission.groupName,
-      questionNumber, status: 'submitted', answerParts };
+      questionNumber, status: 'submitted', answerParts,
+      questionProgress: getTeacherQuestionProgress(db, activityId).find((item) => item.questionNumber === questionNumber)! };
     sendToTeam(activityId, groupId, () => teamEvent);
     sendToTeacher(activityId, teacherEvent);
   };
 
   wss.on('connection', (socket) => {
+    let lastPongAt = Date.now();
+    socket.on('pong', () => { lastPongAt = Date.now(); });
+    const heartbeat = setInterval(() => {
+      if (socket.readyState !== socket.OPEN) return;
+      if (Date.now() - lastPongAt >= STUDENT_OFFLINE_GRACE_MS) {
+        const subscription = subscriptions.get(socket);
+        if (subscription) {
+          const row = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(subscription.sessionId) as { role: Role } | undefined;
+          if (row?.role === 'student') markStudentDisconnected(db, subscription.sessionId);
+        }
+        socket.terminate();
+        return;
+      }
+      socket.ping();
+    }, 10_000);
+    heartbeat.unref?.();
+    heartbeatTimers.set(socket, heartbeat);
     socket.on('message', async (data) => {
       let payload: unknown;
       try { payload = JSON.parse(data.toString()); }
@@ -153,8 +175,9 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
 
       const session = db.prepare('SELECT role, activity_id, group_id, retired_at, authenticated_at FROM user_sessions WHERE id = ?').get(payload.sessionId) as
         { role: Role; activity_id: string | null; group_id: string | null; retired_at: string | null; authenticated_at: string | null } | undefined;
-      const activity = db.prepare('SELECT id, phase, revision, created_by_session_id FROM activities WHERE id = ?').get(payload.activityId) as
-        { id: string; phase: ActivityPhase; revision: number; created_by_session_id: string } | undefined;
+      const activity = db.prepare(`SELECT id, phase, revision, created_by_session_id,
+          joining_opened_at AS joiningOpenedAt FROM activities WHERE id = ?`).get(payload.activityId) as
+        { id: string; phase: ActivityPhase; revision: number; created_by_session_id: string; joiningOpenedAt: string | null } | undefined;
       if (!session || session.retired_at || !activity) { sendError(socket, 'SUBSCRIPTION_DENIED', '找不到工作階段或活動，請重新整理畫面。'); return; }
       const isActivityOwner = session.role === 'teacher' && session.authenticated_at !== null && activity.created_by_session_id === payload.sessionId;
       const isJoinedStudent = session.role === 'student' && session.activity_id === payload.activityId
@@ -164,7 +187,8 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
       if (!authorized) { sendError(socket, 'SUBSCRIPTION_DENIED', '此工作階段尚未加入或無權訂閱此活動。'); return; }
 
       subscriptions.set(socket, { activityId: payload.activityId, sessionId: payload.sessionId });
-      socket.send(JSON.stringify({ type: 'activity.subscribed', activityId: activity.id, phase: activity.phase, revision: activity.revision }));
+      socket.send(JSON.stringify({ type: 'activity.subscribed', activityId: activity.id, phase: activity.phase,
+        revision: activity.revision, joiningOpenedAt: activity.joiningOpenedAt }));
       if (isActivityOwner) {
         const snapshot = buildRosterEvent(activity.id);
         if (snapshot) socket.send(JSON.stringify(snapshot));
@@ -173,7 +197,10 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
         if (snapshot) socket.send(JSON.stringify(snapshot));
       }
     });
-    const detach = () => {
+    const detach = (code = 1006) => {
+      const heartbeatTimer = heartbeatTimers.get(socket);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimers.delete(socket);
       const subscription = subscriptions.get(socket);
       subscriptions.delete(socket);
       if (!subscription) return;
@@ -181,12 +208,15 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
       if (!stillConnected) {
         if (!db.open) return;
         const row = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(subscription.sessionId) as { role: Role } | undefined;
-        if (row?.role === 'student') markStudentDisconnected(db, subscription.sessionId);
+        if (row?.role === 'student') {
+          const graceRemaining = Math.max(0, STUDENT_OFFLINE_GRACE_MS - (Date.now() - lastPongAt));
+          markStudentDisconnected(db, subscription.sessionId, new Date(), code === 1000 ? 0 : graceRemaining);
+        }
         else if (row?.role === 'teacher') markTeacherDisconnected(db, subscription.sessionId);
       }
     };
-    socket.on('close', detach);
-    socket.on('error', detach);
+    socket.on('close', (code) => detach(code));
+    socket.on('error', () => detach(1006));
   });
 
   const publishPhase = (event: ActivityPhaseUpdatedEvent) => {

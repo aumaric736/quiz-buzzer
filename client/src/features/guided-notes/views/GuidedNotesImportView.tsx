@@ -5,9 +5,10 @@ import { discoverWorksheets, importWorksheet } from '../services/guided-notes-ap
 interface GuidedNotesImportViewProps {
   session: UserSession;
   activityId: string;
+  locked?: boolean;
 }
 
-export function GuidedNotesImportView({ session, activityId }: GuidedNotesImportViewProps) {
+export function GuidedNotesImportView({ session, activityId, locked = false }: GuidedNotesImportViewProps) {
   const [spreadsheetUrl, setSpreadsheetUrl] = useState('');
   const [spreadsheetId, setSpreadsheetId] = useState('');
   const [worksheets, setWorksheets] = useState<GuidedNotesWorksheet[]>([]);
@@ -43,14 +44,15 @@ export function GuidedNotesImportView({ session, activityId }: GuidedNotesImport
   return <section className="mt-6 w-full max-w-2xl rounded-3xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
     <p className="text-sm font-medium text-indigo-700">題目來源</p>
     <h3 className="mt-1 text-xl font-bold">匯入 Guided Notes</h3>
+    {locked && <p role="status" className="mt-3 rounded-xl bg-slate-100 p-3 text-sm text-slate-700">開放加入後，學習單與題目清單已鎖定。</p>}
     <p className="mt-2 text-sm text-slate-600">請先將講義分享給伺服器設定的 Google Sheets 服務帳戶。系統只載入題號與填答位置，不會匯入題目敘述。</p>
-    <form className="mt-5 space-y-3" onSubmit={(event) => void findWorksheets(event)}>
+    {!locked && <form className="mt-5 space-y-3" onSubmit={(event) => void findWorksheets(event)}>
       <label className="block text-sm font-medium">Google Sheets 網址
         <input className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3" type="url" inputMode="url" autoComplete="off" maxLength={2048} value={spreadsheetUrl} onChange={(event) => setSpreadsheetUrl(event.target.value)} />
       </label>
       <button className="rounded-xl border border-indigo-300 px-4 py-2 font-semibold text-indigo-900 hover:bg-indigo-50 disabled:opacity-50" disabled={busy || !spreadsheetUrl.trim()}>{busy ? '讀取中…' : '讀取工作表'}</button>
-    </form>
-    {worksheets.length > 0 && <div className="mt-5 space-y-3">
+    </form>}
+    {!locked && worksheets.length > 0 && <div className="mt-5 space-y-3">
       <label className="block text-sm font-medium">選擇工作表
         <select className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3" value={selectedSheetId} onChange={(event) => setSelectedSheetId(event.target.value)}>
           <option value="">請選擇</option>

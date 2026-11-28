@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ActivitySnapshot } from '@quiz-buzzer/shared';
+import type { ActivitySnapshot, BuzzerQuestionPrompt } from '@quiz-buzzer/shared';
 import { AnswerQuestionForm } from '../components/AnswerQuestionForm.js';
 import { getBuzzerQuestions } from '../services/buzzer-flow-api.js';
 
@@ -12,7 +12,7 @@ interface StudentAnswerViewProps {
 }
 
 export function StudentAnswerView({ sessionId, groupId, activity, submittedQuestionNumbers = [], submittedAnswers = [] }: StudentAnswerViewProps) {
-  const [questions, setQuestions] = useState<Array<{ questionNumber: number; blankCount: number }> | null>(null);
+  const [questions, setQuestions] = useState<BuzzerQuestionPrompt[] | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
