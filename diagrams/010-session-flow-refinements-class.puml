@@ -1,0 +1,50 @@
+@startuml
+title Session Flow Refinements - Class View
+class Activity {
+  stage
+  joiningOpenedAt
+  bothStageActionsVisible()
+  availableStageAction()
+  openJoining()
+  startAnswering()
+}
+class Team {
+  members
+  leaderSessionId?
+  acceptsMembers
+  onlineCapacity = 2
+  promoteEligibleMember()
+  clearLeaderWhenNoSuccessor()
+  assignFirstStudentAsLeader()
+  canAcceptStudent()
+}
+class Participant {
+  role
+  lastHeartbeat
+  presence
+  retiredAt?
+  returnFromActivity()
+}
+class PresenceChange {
+  detectedAt
+  reason
+  groupLiveRevision
+  activityLiveRevision
+}
+class TeacherGroupRosterItem {
+  leaderOnline
+  onlineCount
+  joinStatus
+}
+class TeamPresenceSnapshot {
+  groupRole
+  onlineCount
+  acceptsMembers
+}
+Activity "1" o-- "*" Team
+Team "1" o-- "*" Participant
+Team "1" --> "0..1" Participant : current leader
+Participant --> PresenceChange : causes
+Activity --> TeacherGroupRosterItem : live roster
+Team --> TeamPresenceSnapshot : recipient snapshot
+@enduml

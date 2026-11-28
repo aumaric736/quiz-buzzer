@@ -3,6 +3,7 @@ import type { Role, UserSession } from '@quiz-buzzer/shared';
 import type { SqliteDatabase } from '../persistence/database.js';
 import { HttpError } from '../../../api/validation.js';
 import { restoreStudentPresence } from './student-session-presence-service.js';
+import { handoffDepartingLeader } from './group-service.js';
 
 export function requireActiveSession(db: SqliteDatabase, sessionId: string): void {
   const row = db.prepare('SELECT retired_at, role FROM user_sessions WHERE id = ?').get(sessionId) as { retired_at: string | null; role: string } | undefined;
@@ -46,8 +47,14 @@ export function retireSession(db: SqliteDatabase, sessionId: string): { sessionI
     const row = db.prepare('SELECT id FROM user_sessions WHERE id = ?').get(sessionId);
     if (!row) throw new HttpError(404, 'SESSION_NOT_FOUND', '找不到此本機使用者工作階段，請重新選擇角色。');
     const now = new Date().toISOString();
-    const group = db.prepare('SELECT group_id, group_role FROM user_sessions WHERE id = ?').get(sessionId) as { group_id: string | null; group_role: string | null } | undefined;
-    if (group?.group_id && group.group_role === 'leader') db.prepare('UPDATE groups SET accepts_members = 0 WHERE id = ?').run(group.group_id);
+    const group = db.prepare(`SELECT s.group_id AS groupId, s.group_role AS groupRole, a.phase AS phase
+      FROM user_sessions s LEFT JOIN activities a ON a.id = s.activity_id WHERE s.id = ?`).get(sessionId) as
+      { groupId: string | null; groupRole: string | null; phase: string | null } | undefined;
+    if (group?.groupId) {
+      handoffDepartingLeader(db, group.groupId, sessionId, group.phase ?? '');
+      db.prepare('UPDATE groups SET live_revision = live_revision + 1 WHERE id = ?').run(group.groupId);
+      db.prepare('UPDATE activities SET live_revision = live_revision + 1 WHERE id = (SELECT activity_id FROM groups WHERE id = ?)').run(group.groupId);
+    }
     db.prepare('UPDATE user_sessions SET activity_id = NULL, group_id = NULL, disconnected_at = NULL, disconnected_until = NULL, retired_at = ?, updated_at = ? WHERE id = ? AND retired_at IS NULL')
       .run(now, now, sessionId);
   });

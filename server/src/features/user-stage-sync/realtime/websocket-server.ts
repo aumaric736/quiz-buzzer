@@ -53,13 +53,16 @@ export function attachActivitySubscriptions(wss: WebSocketServer, db: SqliteData
     const context = getActivityJoinContext(db, activityId);
     const rows = db.prepare(`SELECT g.id AS groupId, g.display_name AS displayName, g.invite_code AS inviteCode,
         g.accepts_members AS acceptsMembers,
+        EXISTS(SELECT 1 FROM user_sessions leader WHERE leader.id = g.leader_session_id AND leader.role = 'student'
+          AND leader.retired_at IS NULL AND leader.disconnected_at IS NULL) AS leaderOnline,
         (SELECT count(*) FROM user_sessions s WHERE s.group_id = g.id AND s.role = 'student'
         AND s.retired_at IS NULL AND s.disconnected_at IS NULL) AS onlineCount
       FROM groups g WHERE g.activity_id = ? ORDER BY g.joined_at, g.id`).all(activityId) as Array<{
-        groupId: string; displayName: string; inviteCode: string; acceptsMembers: number; onlineCount: number
+      groupId: string; displayName: string; inviteCode: string; acceptsMembers: number; leaderOnline: number; onlineCount: number
       }>;
     return rows.map((row) => ({ groupId: row.groupId, displayName: row.displayName, inviteCode: row.inviteCode,
-      onlineCount: row.onlineCount, joinStatus: resolveGroupJoinStatus(context, row.onlineCount, row.acceptsMembers === 1),
+      onlineCount: row.onlineCount, leaderOnline: row.leaderOnline === 1,
+      joinStatus: resolveGroupJoinStatus(context, row.onlineCount, row.acceptsMembers === 1),
       answers: listAnswers(activityId, row.groupId) }));
   }
 

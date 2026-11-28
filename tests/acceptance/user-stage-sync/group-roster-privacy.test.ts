@@ -33,8 +33,8 @@ describe('teacher group roster privacy', () => {
     const response = await fetch(`${baseUrl}/api/activities/${activityId}/groups`, { headers: { 'X-Local-Session-Id': teacherId } });
     const body = await response.json() as { items: Array<Record<string, unknown>> };
     expect(body.items).toHaveLength(1);
-    expect(Object.keys(body.items[0]!).sort()).toEqual(['displayName', 'groupId', 'inviteCode', 'joinStatus', 'onlineCount']);
-    expect(body.items[0]).toMatchObject({ displayName: 'Secret Name', onlineCount: 1, joinStatus: '開放加入' });
+    expect(Object.keys(body.items[0]!).sort()).toEqual(['displayName', 'groupId', 'inviteCode', 'joinStatus', 'leaderOnline', 'onlineCount']);
+    expect(body.items[0]).toMatchObject({ displayName: 'Secret Name', onlineCount: 1, leaderOnline: true, joinStatus: '開放加入' });
     expect(body).not.toHaveProperty('sessionId');
     expect(JSON.stringify(body)).toContain('Secret Name');
     expect(JSON.stringify(body)).not.toContain(student.sessionId);

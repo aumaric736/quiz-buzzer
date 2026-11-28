@@ -1,4 +1,5 @@
 import type { SqliteDatabase } from '../persistence/database.js';
+import { handoffDepartingLeader } from './group-service.js';
 
 export const STUDENT_OFFLINE_GRACE_MS = 30_000;
 const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -29,11 +30,14 @@ function clearPendingDisconnect(sessionId: string): void {
 
 function classifyOffline(db: SqliteDatabase, sessionId: string, now: Date): void {
   const disconnect = db.transaction(() => {
-    const row = db.prepare("SELECT group_id AS groupId, disconnected_at AS disconnectedAt FROM user_sessions WHERE id = ? AND role = 'student' AND retired_at IS NULL")
-      .get(sessionId) as { groupId: string | null; disconnectedAt: string | null } | undefined;
+    const row = db.prepare(`SELECT s.group_id AS groupId, s.disconnected_at AS disconnectedAt, a.phase AS phase
+      FROM user_sessions s LEFT JOIN activities a ON a.id = s.activity_id
+      WHERE s.id = ? AND s.role = 'student' AND s.retired_at IS NULL`)
+      .get(sessionId) as { groupId: string | null; disconnectedAt: string | null; phase: string | null } | undefined;
     if (!row || row.disconnectedAt || !row.groupId) return null;
     db.prepare("UPDATE user_sessions SET disconnected_at = ?, disconnected_until = NULL, updated_at = ? WHERE id = ? AND role = 'student' AND retired_at IS NULL")
       .run(now.toISOString(), now.toISOString(), sessionId);
+    handoffDepartingLeader(db, row.groupId, sessionId, row.phase ?? '');
     incrementLiveRevisions(db, row.groupId);
     return row.groupId;
   });
@@ -90,18 +94,35 @@ export function expireStudentSession(db: SqliteDatabase, sessionId: string, now 
 }
 
 export function reconcileExpiredStudentSessions(db: SqliteDatabase, _now = new Date()): number {
-  const rows = db.prepare(`SELECT id, group_id AS groupId, updated_at AS updatedAt FROM user_sessions
+  const sessionIds = db.prepare(`SELECT id FROM user_sessions
     WHERE role = 'student' AND retired_at IS NULL AND disconnected_until IS NOT NULL AND disconnected_at IS NULL`).all() as
-    Array<{ id: string; groupId: string | null; updatedAt: string }>;
+    Array<{ id: string }>;
+  const changedGroups = new Set<string>();
   const reconcile = db.transaction(() => {
-    for (const row of rows) {
-      db.prepare('UPDATE user_sessions SET disconnected_at = ?, disconnected_until = NULL WHERE id = ? AND disconnected_at IS NULL')
-        .run(row.updatedAt, row.id);
-      if (row.groupId) incrementLiveRevisions(db, row.groupId);
+    let reconciledCount = 0;
+    for (const { id } of sessionIds) {
+      const row = db.prepare(`SELECT s.group_id AS groupId, s.updated_at AS updatedAt, a.phase AS phase
+        FROM user_sessions s LEFT JOIN activities a ON a.id = s.activity_id
+        WHERE s.id = ? AND s.role = 'student' AND s.retired_at IS NULL
+          AND s.disconnected_until IS NOT NULL AND s.disconnected_at IS NULL`).get(id) as
+        { groupId: string | null; updatedAt: string; phase: string | null } | undefined;
+      if (!row) continue;
+      const result = db.prepare(`UPDATE user_sessions SET disconnected_at = ?, disconnected_until = NULL
+        WHERE id = ? AND role = 'student' AND retired_at IS NULL
+          AND disconnected_until IS NOT NULL AND disconnected_at IS NULL`).run(row.updatedAt, id);
+      if (result.changes === 0) continue;
+      reconciledCount += 1;
+      if (row.groupId) {
+        handoffDepartingLeader(db, row.groupId, id, row.phase ?? '');
+        incrementLiveRevisions(db, row.groupId);
+        changedGroups.add(row.groupId);
+      }
     }
+    return reconciledCount;
   });
-  reconcile.immediate();
-  return rows.length;
+  const reconciledCount = reconcile.immediate();
+  for (const groupId of changedGroups) publishPresenceChange(db, groupId);
+  return reconciledCount;
 }
 
 export function schedulePendingStudentExpirations(db: SqliteDatabase, now = new Date()): void {

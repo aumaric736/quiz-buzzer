@@ -1,0 +1,39 @@
+@startuml
+title Session Flow Refinements - Sequence View
+actor Teacher
+actor Student
+participant "Activity Session" as Activity
+participant "Presence Detector" as Presence
+participant "Team" as Team
+participant "Session Service" as Sessions
+participant "Revisioned WebSocket Publishers" as Publishers
+participant "Teacher and Student Views" as Views
+Teacher -> Activity : create activity
+Activity --> Teacher : both visible; join enabled; answer disabled
+Teacher -> Activity : start joining
+Activity --> Teacher : both visible; join disabled; answer enabled
+loop while team formation is active
+  Presence -> Presence : check participant heartbeat
+  alt leader heartbeat reaches 30 seconds without response
+    Presence -> Team : begin transaction; mark leader offline
+    Team -> Team : promote remaining online member or clear leader
+    Team -> Team : increment group and activity revisions once
+    Presence -> Publishers : commit, then publish snapshots
+    Publishers -> Views : roster leaderOnline and team groupRole
+  else student uses return action
+    Student -> Sessions : POST reset-context
+    Sessions -> Team : begin transaction; promote or clear leader
+    Sessions -> Sessions : detach and retire departing session
+    Sessions -> Team : increment group and activity revisions once
+    Sessions -> Publishers : commit, then publish snapshots
+    Publishers -> Views : roster and remaining member role
+  end
+end
+Teacher -> Activity : start answering
+Activity --> Teacher : both visible and disabled
+note over Team
+  At most two online seats.
+  A first joiner to an empty team without a leader becomes leader.
+  Outside preparation, do not promote on departure.
+end note
+@enduml

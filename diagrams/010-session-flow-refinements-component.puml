@@ -1,0 +1,26 @@
+@startuml
+title Session Flow Refinements - Component View
+actor Teacher
+actor Student
+rectangle "Activity Session" {
+  component "Activity Stage Controls" as Stages
+  component "Team Membership" as Teams
+  component "Participant Presence" as Presence
+  component "Leader Assignment" as Leader
+  component "Session and Group Services" as Services
+  component "Revisioned WebSocket Publishers" as Publishers
+  component "Teacher and Student Views" as Views
+}
+Teacher --> Stages
+Student --> Teams
+Presence --> Leader : leader offline during preparation
+Leader --> Teams : promote online member or clear leader
+Teams --> Leader : first student leads empty team
+Presence --> Services : timeout transaction
+Student --> Services : explicit return
+Services --> Leader : handoff before detaching returner
+Services --> Publishers : commit role and revision changes
+Publishers --> Views : roster leaderOnline and team groupRole
+Stages --> Views : stage change
+Teams --> Views : membership and leader state
+@enduml

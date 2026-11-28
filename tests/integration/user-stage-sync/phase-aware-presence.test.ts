@@ -34,7 +34,7 @@ describe('phase-aware student presence', () => {
     } finally { db.close(); }
   });
 
-  it('waits for 30 consecutive seconds without heartbeat after an unclean interruption', async () => {
+  it('keeps a leader online at 29,999 ms and promotes the remaining member at 30,000 ms', async () => {
     vi.useFakeTimers({ now: new Date('2026-01-01T00:00:00.000Z') });
     const db = createTestDatabase();
     try {
@@ -43,12 +43,41 @@ describe('phase-aware student presence', () => {
       const group = enrollGroup(db, leader, activityId, { mode: 'leader', groupName: 'Heartbeat Team' });
       const member = createSession(db, 'student').sessionId;
       enrollGroup(db, member, activityId, { mode: 'member', inviteCode: group.inviteCode });
-      markStudentDisconnected(db, member, new Date(), 30_000);
+      const beforeDeparture = db.prepare(`SELECT g.live_revision AS groupRevision, a.live_revision AS activityRevision
+        FROM groups g JOIN activities a ON a.id = g.activity_id WHERE g.id = ?`).get(group.groupId) as { groupRevision: number; activityRevision: number };
+      markStudentDisconnected(db, leader, new Date(), 30_000);
       expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 2, joinStatus: '額滿' });
       await vi.advanceTimersByTimeAsync(29_999);
       expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 2 });
+      expect(db.prepare('SELECT leader_session_id AS leaderSessionId FROM groups WHERE id = ?').get(group.groupId))
+        .toEqual({ leaderSessionId: leader });
       await vi.advanceTimersByTimeAsync(1);
       expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 1, joinStatus: '開放加入' });
+      expect(db.prepare('SELECT leader_session_id AS leaderSessionId, accepts_members FROM groups WHERE id = ?').get(group.groupId))
+        .toEqual({ leaderSessionId: member, accepts_members: 1 });
+      expect(db.prepare('SELECT group_role AS groupRole FROM user_sessions WHERE id = ?').get(leader)).toEqual({ groupRole: 'member' });
+      expect(db.prepare('SELECT group_role AS groupRole FROM user_sessions WHERE id = ?').get(member)).toEqual({ groupRole: 'leader' });
+      expect(db.prepare(`SELECT g.live_revision AS groupRevision, a.live_revision AS activityRevision
+        FROM groups g JOIN activities a ON a.id = g.activity_id WHERE g.id = ?`).get(group.groupId))
+        .toEqual({ groupRevision: beforeDeparture.groupRevision + 1, activityRevision: beforeDeparture.activityRevision + 1 });
+    } finally { db.close(); }
+  });
+
+  it('does not promote a member when a leader disconnects after preparation', () => {
+    const db = createTestDatabase();
+    try {
+      const { teacherId, activityId } = readyActivity(db);
+      const leader = createSession(db, 'student').sessionId;
+      const group = enrollGroup(db, leader, activityId, { mode: 'leader', groupName: 'Answering Leader' });
+      const member = createSession(db, 'student').sessionId;
+      enrollGroup(db, member, activityId, { mode: 'member', inviteCode: group.inviteCode });
+      transitionActivity(db, teacherId, activityId, '搶答進行中');
+
+      markStudentDisconnected(db, leader);
+
+      expect(db.prepare('SELECT leader_session_id AS leaderSessionId FROM groups WHERE id = ?').get(group.groupId))
+        .toEqual({ leaderSessionId: leader });
+      expect(db.prepare('SELECT group_role AS groupRole FROM user_sessions WHERE id = ?').get(member)).toEqual({ groupRole: 'member' });
     } finally { db.close(); }
   });
 
@@ -79,18 +108,24 @@ describe('phase-aware student presence', () => {
     } finally { db.close(); }
   });
 
-  it('counts an offline leader as offline and restores the leader role when the original group has room', () => {
+  it('does not let a returning former leader reclaim leadership after promotion', () => {
     const db = createTestDatabase();
     try {
       const { activityId } = readyActivity(db);
       const leader = createSession(db, 'student').sessionId;
       const group = enrollGroup(db, leader, activityId, { mode: 'leader', groupName: 'Leader Team' });
+      const member = createSession(db, 'student').sessionId;
+      enrollGroup(db, member, activityId, { mode: 'member', inviteCode: group.inviteCode });
       markStudentDisconnected(db, leader);
-      expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 0, joinStatus: '開放加入' });
+      expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 1, joinStatus: '開放加入' });
+      expect(db.prepare('SELECT leader_session_id AS leaderSessionId FROM groups WHERE id = ?').get(group.groupId))
+        .toEqual({ leaderSessionId: member });
       expect(restoreStudentPresence(db, leader, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))).toBe(true);
       expect(db.prepare('SELECT group_role AS role, disconnected_at AS disconnectedAt FROM user_sessions WHERE id = ?').get(leader))
-        .toEqual({ role: 'leader', disconnectedAt: null });
-      expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 1, joinStatus: '開放加入' });
+        .toEqual({ role: 'member', disconnectedAt: null });
+      expect(db.prepare('SELECT leader_session_id AS leaderSessionId FROM groups WHERE id = ?').get(group.groupId))
+        .toEqual({ leaderSessionId: member });
+      expect(listGroupRoster(db, activityId)[0]).toMatchObject({ onlineCount: 2, joinStatus: '額滿' });
       expect(group.groupId).toBeTruthy();
     } finally { db.close(); }
   });

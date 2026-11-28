@@ -4,8 +4,10 @@ import { createSession, getSession, retireSession } from '../application/session
 import { HttpError, isRecord } from '../../../api/validation.js';
 import { endActivitiesForTeacherLeave } from '../application/teacher-presence-service.js';
 import type { ActivityPhaseUpdatedEvent } from '@quiz-buzzer/shared';
+import type { ActivityLivePublishers } from '../realtime/websocket-server.js';
 
-export function sessionRoutes(db: SqliteDatabase, publishPhase: (event: ActivityPhaseUpdatedEvent) => void = () => undefined): Router {
+export function sessionRoutes(db: SqliteDatabase, publishPhase: (event: ActivityPhaseUpdatedEvent) => void = () => undefined,
+  livePublishers?: Pick<ActivityLivePublishers, 'publishTeamPresence' | 'publishRoster'>): Router {
   const router = Router();
 
   router.post('/api/sessions', (request, response, next) => {
@@ -29,12 +31,19 @@ export function sessionRoutes(db: SqliteDatabase, publishPhase: (event: Activity
       const sessionId = request.params.sessionId;
       if (!sessionId || sessionId.length > 100) throw new HttpError(400, 'INVALID_SESSION_ID', '工作階段識別格式不正確。');
       const role = db.prepare('SELECT role FROM user_sessions WHERE id = ?').get(sessionId) as { role: string } | undefined;
+      const currentContext = db.prepare('SELECT activity_id AS activityId, group_id AS groupId FROM user_sessions WHERE id = ?').get(sessionId) as
+        { activityId: string | null; groupId: string | null } | undefined;
       if (role?.role === 'teacher') {
         const activities = db.prepare("SELECT id, phase, revision FROM activities WHERE created_by_session_id = ? AND phase != '已結束'").all(sessionId) as Array<{ id: string; phase: string; revision: number }>;
         await endActivitiesForTeacherLeave(db, sessionId);
         activities.forEach((activity) => publishPhase({ type: 'activity.phase.updated', activityId: activity.id, phase: '已結束', revision: activity.revision + 1 }));
       }
-      response.json(retireSession(db, sessionId));
+      const result = retireSession(db, sessionId);
+      if (currentContext?.activityId && currentContext.groupId) {
+        livePublishers?.publishTeamPresence(currentContext.activityId, currentContext.groupId);
+        livePublishers?.publishRoster(currentContext.activityId);
+      }
+      response.json(result);
     } catch (error) { next(error); }
   });
 

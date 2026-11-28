@@ -63,6 +63,7 @@ export function parseActivitySocketEvent(raw: string, expectedActivityId: string
         && typeof group.displayName === 'string' && group.displayName.length > 0
         && (group.inviteCode === undefined || typeof group.inviteCode === 'string')
         && validCount(group.onlineCount)
+        && typeof group.leaderOnline === 'boolean'
         && ['不可用', '開放加入', '額滿', '停止加入'].includes(String(group.joinStatus))
         && validAnswerSnapshots(group.answers);
     });
