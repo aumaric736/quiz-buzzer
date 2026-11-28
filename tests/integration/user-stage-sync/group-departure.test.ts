@@ -22,15 +22,42 @@ describe('group departure', () => {
   const enroll = (sessionId: string, body: unknown) => fetch(`${baseUrl}/api/activities/${activityId}/groups`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Local-Session-Id': sessionId }, body: JSON.stringify(body) });
   const leave = (sessionId: string) => fetch(`${baseUrl}/api/sessions/${sessionId}/reset-context`, { method: 'POST' });
 
-  it('closes new joins when the leader leaves while the existing member remains active', async () => {
+  it('promotes the remaining member and allows another student to fill the vacant seat after leader return', async () => {
     const leader = createSession(db, 'student');
     const group = await (await enroll(leader.sessionId, { mode: 'leader', groupName: 'Leaving Leader' })).json() as { inviteCode: string; groupId: string };
     const member = createSession(db, 'student'); await enroll(member.sessionId, { mode: 'member', inviteCode: group.inviteCode });
-    await leave(leader.sessionId);
-    expect(db.prepare('SELECT accepts_members FROM groups WHERE id = ?').get(group.groupId)).toEqual({ accepts_members: 0 });
+    const beforeDeparture = db.prepare(`SELECT g.live_revision AS groupRevision, a.live_revision AS activityRevision
+      FROM groups g JOIN activities a ON a.id = g.activity_id WHERE g.id = ?`).get(group.groupId) as { groupRevision: number; activityRevision: number };
+    const leaveResponse = await leave(leader.sessionId);
+    expect(leaveResponse.status).toBe(200);
+    expect(await leaveResponse.json()).toEqual({ sessionId: leader.sessionId, status: 'retired', activityId: null, groupId: null });
+    expect(db.prepare(`SELECT g.live_revision AS groupRevision, a.live_revision AS activityRevision
+      FROM groups g JOIN activities a ON a.id = g.activity_id WHERE g.id = ?`).get(group.groupId))
+      .toEqual({ groupRevision: beforeDeparture.groupRevision + 1, activityRevision: beforeDeparture.activityRevision + 1 });
+    expect(db.prepare('SELECT accepts_members, leader_session_id AS leaderSessionId FROM groups WHERE id = ?').get(group.groupId))
+      .toEqual({ accepts_members: 1, leaderSessionId: member.sessionId });
+    expect(db.prepare('SELECT group_role AS groupRole FROM user_sessions WHERE id = ?').get(member.sessionId)).toEqual({ groupRole: 'leader' });
     expect((await fetch(`${baseUrl}/api/sessions/${member.sessionId}`)).status).toBe(200);
     const newcomer = createSession(db, 'student');
-    expect((await enroll(newcomer.sessionId, { mode: 'member', inviteCode: group.inviteCode })).status).toBe(404);
+    expect((await enroll(newcomer.sessionId, { mode: 'member', inviteCode: group.inviteCode })).status).toBe(201);
+  });
+
+  it('assigns leader to the first student who joins a leaderless empty team', async () => {
+    const leader = createSession(db, 'student');
+    const group = await (await enroll(leader.sessionId, { mode: 'leader', groupName: 'Empty Team' })).json() as { inviteCode: string; groupId: string };
+    const member = createSession(db, 'student'); await enroll(member.sessionId, { mode: 'member', inviteCode: group.inviteCode });
+    await leave(leader.sessionId);
+    await leave(member.sessionId);
+
+    expect(db.prepare('SELECT leader_session_id AS leaderSessionId, accepts_members FROM groups WHERE id = ?').get(group.groupId))
+      .toEqual({ leaderSessionId: null, accepts_members: 1 });
+    const firstJoiner = createSession(db, 'student');
+    const response = await enroll(firstJoiner.sessionId, { mode: 'member', inviteCode: group.inviteCode });
+    expect(response.status).toBe(201);
+    expect(db.prepare('SELECT leader_session_id AS leaderSessionId FROM groups WHERE id = ?').get(group.groupId))
+      .toEqual({ leaderSessionId: firstJoiner.sessionId });
+    expect(db.prepare('SELECT group_role AS groupRole FROM user_sessions WHERE id = ?').get(firstJoiner.sessionId))
+      .toEqual({ groupRole: 'leader' });
   });
 
   it('frees an explicitly retired member seat while a clean leader disconnect keeps its membership', async () => {
@@ -42,7 +69,9 @@ describe('group departure', () => {
     expect((await enroll(replacement.sessionId, { mode: 'member', inviteCode: group.inviteCode })).status).toBe(201);
     markStudentDisconnected(db, leader.sessionId, new Date(Date.now() - 120_001));
     expireStudentSession(db, leader.sessionId, new Date());
-    expect(db.prepare('SELECT accepts_members FROM groups WHERE id = ?').get(group.groupId)).toEqual({ accepts_members: 1 });
+    expect(db.prepare('SELECT accepts_members, leader_session_id AS leaderSessionId FROM groups WHERE id = ?').get(group.groupId))
+      .toEqual({ accepts_members: 1, leaderSessionId: replacement.sessionId });
+    expect(db.prepare('SELECT group_role AS groupRole FROM user_sessions WHERE id = ?').get(leader.sessionId)).toEqual({ groupRole: 'member' });
     expect(db.prepare('SELECT group_id FROM user_sessions WHERE id = ?').get(leader.sessionId)).toEqual({ group_id: group.groupId });
     expect(db.prepare('SELECT retired_at FROM user_sessions WHERE id = ?').get(replacement.sessionId)).toEqual({ retired_at: null });
   });

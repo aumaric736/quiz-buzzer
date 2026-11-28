@@ -68,11 +68,17 @@ export function enrollGroup(db: SqliteDatabase, sessionId: string, activityId: s
       if (online >= 2) throw new HttpError(409, 'GROUP_FULL', session.group_id === found.id
         ? '原小組已額滿，請選擇其他有空位的小組。' : '此小組目前已滿，請選擇其他有空位的小組。');
       group = { groupId: found.id, activityId, displayName: found.display_name, inviteCode: found.invite_code };
-      role = session.group_id === found.id && session.group_role ? session.group_role : 'member';
+      role = session.group_id === found.id && session.group_role
+        ? session.group_role
+        : found.leader_session_id === null && online === 0 ? 'leader' : 'member';
     }
     const now = new Date().toISOString();
     db.prepare('UPDATE user_sessions SET activity_id = ?, group_id = ?, group_role = ?, disconnected_at = NULL, disconnected_until = NULL, updated_at = ? WHERE id = ?')
       .run(activityId, group.groupId, role, now, sessionId);
+    if (mode === 'member' && role === 'leader') {
+      db.prepare('UPDATE groups SET leader_session_id = ? WHERE id = ? AND leader_session_id IS NULL')
+        .run(sessionId, group.groupId);
+    }
     db.prepare('UPDATE groups SET live_revision = live_revision + 1 WHERE id = ?').run(group.groupId);
     db.prepare('UPDATE activities SET live_revision = live_revision + 1 WHERE id = ?').run(activityId);
     const counts = db.prepare(`SELECT g.accepts_members AS acceptsMembers, g.live_revision AS groupLiveRevision,
@@ -89,7 +95,19 @@ export function enrollGroup(db: SqliteDatabase, sessionId: string, activityId: s
   return enroll.immediate();
 }
 
-export function retireGroupSession(db: SqliteDatabase, sessionId: string): void {
-  const row = db.prepare('SELECT group_id, group_role FROM user_sessions WHERE id = ?').get(sessionId) as { group_id: string | null; group_role: string | null } | undefined;
-  if (row?.group_id && row.group_role === 'leader') db.prepare('UPDATE groups SET accepts_members = 0 WHERE id = ?').run(row.group_id);
+/** Reassign or clear leadership during team formation. The caller owns revision increments. */
+export function handoffDepartingLeader(db: SqliteDatabase, groupId: string, sessionId: string, phase: string): boolean {
+  const group = db.prepare('SELECT leader_session_id AS leaderSessionId FROM groups WHERE id = ?').get(groupId) as
+    { leaderSessionId: string | null } | undefined;
+  if (!group || group.leaderSessionId !== sessionId || phase !== '準備中') return false;
+
+  const successor = db.prepare(`SELECT id FROM user_sessions WHERE group_id = ? AND id <> ? AND role = 'student'
+      AND retired_at IS NULL AND disconnected_at IS NULL ORDER BY updated_at, id LIMIT 1`)
+    .get(groupId, sessionId) as { id: string } | undefined;
+  db.prepare("UPDATE user_sessions SET group_role = 'member' WHERE id = ? AND group_id = ?")
+    .run(sessionId, groupId);
+  if (successor) db.prepare("UPDATE user_sessions SET group_role = 'leader' WHERE id = ? AND group_id = ?")
+    .run(successor.id, groupId);
+  db.prepare('UPDATE groups SET leader_session_id = ? WHERE id = ?').run(successor?.id ?? null, groupId);
+  return true;
 }

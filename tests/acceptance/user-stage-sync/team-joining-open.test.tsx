@@ -5,17 +5,29 @@ import { TeacherActivityView } from '../../../client/src/features/user-stage-syn
 import { StudentJoinView } from '../../../client/src/features/user-stage-sync/views/StudentJoinView.js';
 
 describe('explicit team joining acceptance', () => {
-  it('shows the teacher open-joining action only while preparing and not yet opened', () => {
+  it('keeps both teacher stage actions visible and enables only the action for the current stage', () => {
     const session = { sessionId: 'teacher-1', role: 'teacher' as const, activityId: null, groupId: null };
-    const preparing = renderToStaticMarkup(createElement(TeacherActivityView, {
-      session, initialActivity: { activityId: 'activity-1', phase: '準備中', revision: 0, joiningOpenedAt: null }
-    }));
-    const opened = renderToStaticMarkup(createElement(TeacherActivityView, {
-      session, initialActivity: { activityId: 'activity-1', phase: '準備中', revision: 0, joiningOpenedAt: '2026-01-01T00:00:00Z' }
+    const renderActivity = (phase: '準備中' | '搶答進行中' | '已結束', joiningOpenedAt: string | null) => renderToStaticMarkup(createElement(TeacherActivityView, {
+      session, initialActivity: { activityId: 'activity-1', phase, revision: 0, joiningOpenedAt }
     }));
 
-    expect(preparing).toContain('開放加入');
-    expect(opened).not.toContain('開放加入</button>');
+    const created = renderActivity('準備中', null);
+    const joining = renderActivity('準備中', '2026-01-01T00:00:00Z');
+    const answering = renderActivity('搶答進行中', '2026-01-01T00:00:00Z');
+    const ended = renderActivity('已結束', '2026-01-01T00:00:00Z');
+
+    for (const markup of [created, joining, answering, ended]) {
+      expect(markup).toContain('開始加入');
+      expect(markup).toContain('開始答題');
+    }
+    expect(created).toMatch(/<button[^>]*>開始加入<\/button>/);
+    expect(created).toMatch(/<button[^>]*disabled=""[^>]*>開始答題<\/button>/);
+    expect(joining).toMatch(/<button[^>]*disabled=""[^>]*>開始加入<\/button>/);
+    expect(joining).toMatch(/<button[^>]*>開始答題<\/button>/);
+    expect(answering).toMatch(/<button[^>]*disabled=""[^>]*>開始加入<\/button>/);
+    expect(answering).toMatch(/<button[^>]*disabled=""[^>]*>開始答題<\/button>/);
+    expect(ended).toMatch(/<button[^>]*disabled=""[^>]*>開始加入<\/button>/);
+    expect(ended).toMatch(/<button[^>]*disabled=""[^>]*>開始答題<\/button>/);
   });
 
   it('keeps the student team-formation screen free of a new question-count or question-preview panel', () => {

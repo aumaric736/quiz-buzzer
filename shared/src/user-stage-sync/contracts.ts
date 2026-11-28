@@ -49,6 +49,7 @@ export interface LiveGroupRosterRecord {
   displayName: string;
   inviteCode?: string;
   onlineCount: number;
+  leaderOnline: boolean;
   joinStatus: GroupJoinStatus;
   answers: LiveQuestionAnswerSnapshot[];
 }
@@ -91,6 +92,7 @@ export interface TeacherGroupRosterItem {
   displayName: string;
   inviteCode: string;
   onlineCount: number;
+  leaderOnline: boolean;
   joinStatus: GroupJoinStatus;
 }
 

@@ -47,6 +47,19 @@ describe('group enrollment API', () => {
     expect(db.prepare('SELECT activity_id, group_id FROM user_sessions WHERE id = ?').get(studentId)).toEqual({ activity_id: activityId, group_id: result.groupId });
   });
 
+  it('returns the current leader online state in the initial teacher roster', async () => {
+    const response = await join(studentId, 'Roster Leader');
+    const group = await response.json() as { groupId: string; displayName: string; inviteCode: string };
+    const rosterResponse = await fetch(`${baseUrl}/api/activities/${activityId}/groups`, {
+      headers: { 'X-Local-Session-Id': teacherId }
+    });
+
+    expect(rosterResponse.status).toBe(200);
+    expect(await rosterResponse.json()).toMatchObject({ items: [expect.objectContaining({
+      groupId: group.groupId, displayName: group.displayName, inviteCode: group.inviteCode, leaderOnline: true
+    })] });
+  });
+
   it('rejects duplicates, blank names, teacher joins, and late joins without mutating context', async () => {
     expect((await join(studentId, 'Red Team')).status).toBe(201);
     const before = db.prepare('SELECT activity_id, group_id FROM user_sessions WHERE id = ?').get(studentId);

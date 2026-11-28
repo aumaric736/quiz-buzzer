@@ -70,12 +70,12 @@ describe('live activity WebSocket snapshots', () => {
     const { snapshot: rawSnapshot } = await subscribe(teacherId);
     const snapshot = rawSnapshot as {
       type: string; activityId: string; activityLiveRevision: number;
-      groups: Array<{ groupId: string; answers: Array<{ questionNumber: number; status: string; answerParts?: string[] }> }>;
+      groups: Array<{ groupId: string; leaderOnline: boolean; answers: Array<{ questionNumber: number; status: string; answerParts?: string[] }> }>;
     };
     expect(snapshot).toMatchObject({ type: 'activity.roster.updated', activityId, activityLiveRevision: 2 });
     expect(snapshot.groups).toEqual(expect.arrayContaining([
-      expect.objectContaining({ groupId: blueGroupId, answers: expect.arrayContaining([expect.objectContaining({ questionNumber: 1, displayOrder: 0, status: 'submitted', answerParts: ['Blue answer'] })]) }),
-      expect.objectContaining({ groupId: greenGroupId, answers: expect.arrayContaining([expect.objectContaining({ questionNumber: 2, displayOrder: 1, status: 'submitted', answerParts: ['Green answer'] })]) })
+      expect.objectContaining({ groupId: blueGroupId, leaderOnline: true, answers: expect.arrayContaining([expect.objectContaining({ questionNumber: 1, displayOrder: 0, status: 'submitted', answerParts: ['Blue answer'] })]) }),
+      expect.objectContaining({ groupId: greenGroupId, leaderOnline: true, answers: expect.arrayContaining([expect.objectContaining({ questionNumber: 2, displayOrder: 1, status: 'submitted', answerParts: ['Green answer'] })]) })
     ]));
   });
 
@@ -95,6 +95,31 @@ describe('live activity WebSocket snapshots', () => {
     expect(greenSnapshot.groupId).toBe(greenGroupId);
     expect(greenSnapshot.answers).toContainEqual({ questionNumber: 2, displayOrder: 1, status: 'submitted', answerParts: ['Green answer'] });
     expect(greenSnapshot.answers).not.toContainEqual(expect.objectContaining({ questionNumber: 1, answerParts: ['Blue answer'] }));
+  });
+
+  it('publishes explicit leader return to the teacher roster and remaining member snapshot', async () => {
+    const leader = createSession(db, 'student').sessionId;
+    const groupResponse = await fetch(`${baseUrl}/api/activities/${activityId}/groups`, { method: 'POST',
+      headers: { 'content-type': 'application/json', 'X-Local-Session-Id': leader }, body: JSON.stringify({ mode: 'leader', groupName: 'Return Team' }) });
+    const group = await groupResponse.json() as { groupId: string; inviteCode: string };
+    const member = createSession(db, 'student').sessionId;
+    const memberResponse = await fetch(`${baseUrl}/api/activities/${activityId}/groups`, { method: 'POST',
+      headers: { 'content-type': 'application/json', 'X-Local-Session-Id': member }, body: JSON.stringify({ mode: 'member', inviteCode: group.inviteCode }) });
+    expect(memberResponse.status).toBe(201);
+
+    const teacher = await subscribe(teacherId);
+    expect(teacher.snapshot).toMatchObject({ type: 'activity.roster.updated', groups: expect.arrayContaining([expect.objectContaining({ groupId: group.groupId, leaderOnline: true })]) });
+    const student = await subscribe(member);
+    expect(student.snapshot).toMatchObject({ type: 'team.presence.updated', groupId: group.groupId, groupRole: 'member' });
+    const teacherUpdate = harness.nextMessage(teacher.socket);
+    const studentUpdate = harness.nextMessage(student.socket);
+    const response = await fetch(`${baseUrl}/api/sessions/${leader}/reset-context`, { method: 'POST' });
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(await teacherUpdate)).toMatchObject({ type: 'activity.roster.updated', activityLiveRevision: 5,
+      groups: expect.arrayContaining([expect.objectContaining({ groupId: group.groupId, onlineCount: 1, leaderOnline: true })]) });
+    expect(JSON.parse(await studentUpdate)).toMatchObject({ type: 'team.presence.updated', groupId: group.groupId,
+      groupLiveRevision: 3, groupRole: 'leader', onlineCount: 1 });
   });
 
   it('publishes a submitted answer only to its team and the activity teacher', async () => {

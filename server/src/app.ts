@@ -60,7 +60,7 @@ export function createApp(
   app.use(express.json({ limit: '16kb', strict: false }));
   app.get('/health', (_request, response) => response.json({ status: 'ok' }));
   app.use(teacherRoutes(db, dependencies.teacherCredentials ?? null));
-  app.use(sessionRoutes(db, publishPhase));
+  app.use(sessionRoutes(db, publishPhase, dependencies.liveActivityPublishers));
   app.use(activityRoutes(db, publishPhase, dependencies.liveActivityPublishers?.publishRoster));
   app.use(groupRoutes(db, dependencies.liveActivityPublishers));
   app.use(answerStatusRoutes(db));

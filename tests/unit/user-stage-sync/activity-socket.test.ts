@@ -17,12 +17,14 @@ describe('activity socket event validation', () => {
   it('accepts teacher roster revisions and ignores stale live revisions', () => {
     const event = parseActivitySocketEvent(JSON.stringify({
       type: 'activity.roster.updated', activityId: 'a1', activityLiveRevision: 3,
-      groups: [{ groupId: 'g1', displayName: 'Blue', onlineCount: 1, joinStatus: '開放加入', answers: [] }]
+      groups: [{ groupId: 'g1', displayName: 'Blue', onlineCount: 1, leaderOnline: true, joinStatus: '開放加入', answers: [] }]
     }), 'a1');
     expect(event?.type).toBe('activity.roster.updated');
     expect(shouldApplyActivityRevision(event!, 2)).toBe(true);
     expect(shouldApplyActivityRevision(event!, 3)).toBe(false);
     expect(shouldApplyActivityRevision(event!, 4)).toBe(false);
+    expect(parseActivitySocketEvent(JSON.stringify({ ...event, groups: [{ ...event.groups[0], leaderOnline: 'yes' }] }), 'a1')).toBeNull();
+    expect(parseActivitySocketEvent(JSON.stringify({ ...event, groups: [{ groupId: 'g1', displayName: 'Blue', onlineCount: 1, joinStatus: '開放加入', answers: [] }] }), 'a1')).toBeNull();
   });
 
   it('rejects live events for a different activity or team and invalid roster counts', () => {
